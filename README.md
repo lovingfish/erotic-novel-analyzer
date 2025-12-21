@@ -15,24 +15,29 @@
 ### 1. 安装依赖
 
 ```bash
-# 创建虚拟环境（已内置）
-novel-analyzer\venv\Scripts\activate
+# （可选）创建虚拟环境
+python -m venv venv
+.\venv\Scripts\activate
 
 # 安装依赖
 pip install -r requirements.txt
 ```
 
-### 2. 配置API
+### 2. 配置（仅 `.env`）
 
-编辑 `.env` 文件，填入你的API信息：
+为安全起见：网页端不提供任何配置入口，所有配置都从服务端 `.env` 读取（`.env` 不会进 Git）。
+
+从 `.env.example` 复制一份为 `.env`，再按需修改：
 
 ```env
+NOVEL_PATH=你的小说根目录
 API_BASE_URL=https://your-api.com/v1
 API_KEY=sk-your-api-key
 MODEL_NAME=gpt-4o
+HOST=127.0.0.1
+PORT=6103
+DEBUG=false
 ```
-
-或者在浏览器界面中直接填写并保存。
 
 ### 3. 启动服务
 
@@ -42,6 +47,9 @@ MODEL_NAME=gpt-4o
 start.bat
 ```
 
+`start.bat` 会优先使用 `venv\\Scripts\\python.exe`（存在则用），并从 `.env` 读取 `HOST/PORT/NOVEL_PATH` 等配置。
+（准确说：`backend.py` 会自动读取 `.env`，脚本本身不解析 `.env`，避免覆盖配置。）
+
 **手动启动:**
 
 ```bash
@@ -50,19 +58,28 @@ python backend.py
 
 ### 4. 使用
 
-1. 打开浏览器访问 `http://localhost:8000`
-2. 填写API配置并测试连接
-3. 选择左侧小说文件
-4. 点击"开始分析"
+1. 打开浏览器访问 `http://127.0.0.1:6103`
+2. 选择左侧小说文件
+3. 点击"开始分析"
+4. （可选）右上角“配置（只读）”里点击“测试连接”
 5. 查看分析结果，支持多个Tab切换
 
 ## 配置说明
 
-| 配置项       | 说明     | 示例                   |
-| ------------ | -------- | ---------------------- |
-| API_BASE_URL | API地址  | https://juya.owl,ci/v1 |
-| API_KEY      | API密钥  | sk-xxx                 |
-| MODEL_NAME   | 模型名称 | DeepSeek-V3.1-Terminus |
+| 配置项       | 说明               | 示例                      |
+| ------------ | ------------------ | ------------------------- |
+| NOVEL_PATH   | 小说根目录         | X:\\Gallery\\h小说         |
+| API_BASE_URL | OpenAI兼容API地址   | https://api.example.com/v1 |
+| API_KEY      | API密钥             | sk-xxx                    |
+| MODEL_NAME   | 模型名称            | gpt-4o                    |
+| HOST         | 监听地址(默认本机)  | 127.0.0.1                 |
+| PORT         | 端口                | 6103                      |
+| DEBUG        | 显示LLM原始响应错误 | false                     |
+
+## 安全提示
+
+- 默认只监听 `127.0.0.1`；除非你知道风险，否则不要把 `HOST` 改成 `0.0.0.0`（会把本机文件列表/内容暴露给局域网）。
+- API Key 仅存在于服务端 `.env`，网页不会读取/保存/发送 API Key。
 
 ## 目录结构
 
@@ -70,6 +87,7 @@ python backend.py
 novel-analyzer/
 ├── backend.py          # FastAPI后端
 ├── .env                # API配置
+├── .env.example        # 配置模板
 ├── requirements.txt    # 依赖列表
 ├── README.md           # 说明文档
 ├── templates/

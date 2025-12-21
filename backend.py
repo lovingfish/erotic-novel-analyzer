@@ -8,16 +8,19 @@ import os
 import json
 import re
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any
+from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from dotenv import load_dotenv
 import requests
 
 load_dotenv()
+
+DEBUG = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "y"}
 
 app = FastAPI(
     title="小说分析器",
@@ -28,15 +31,22 @@ app = FastAPI(
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-NOVEL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_NOVEL_PATH = NOVEL_ROOT
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_NOVEL_PATH = Path(os.getenv("NOVEL_PATH", str(BASE_DIR.parent))).resolve()
 
 
 class AnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     content: str
-    api_url: str
-    api_key: str
-    model: str
+
+
+def _get_llm_config() -> tuple[str, str, str]:
+    api_url = os.getenv("API_BASE_URL", "").strip()
+    api_key = os.getenv("API_KEY", "").strip()
+    model = os.getenv("MODEL_NAME", "").strip()
+    if not api_url or not api_key or not model:
+        raise HTTPException(status_code=400, detail="服务端未配置API（请在.env中设置API_BASE_URL/API_KEY/MODEL_NAME）")
+    return _validate_api_url(api_url), api_key, model
 
 
 def extract_json_from_response(text: str) -> Dict[str, Any]:
@@ -66,15 +76,68 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
     return {}
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+
+def _validate_api_url(api_url: str) -> str:
+    url = (api_url or "").strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="API URL必须是http/https且包含主机，例如：https://example.com/v1")
+    return url.rstrip("/")
+
+
+def _safe_novel_path(base_path: Path, user_path: str) -> Path:
+    base = base_path.resolve()
+    raw = (user_path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="路径不能为空")
+
+    try:
+        candidate = (base / raw).resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="非法路径")
+
+    try:
+        candidate.relative_to(base)
+    except Exception:
+        raise HTTPException(status_code=403, detail="非法路径")
+
+    if candidate.suffix.lower() != ".txt":
+        raise HTTPException(status_code=400, detail="仅支持.txt文件")
+
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return candidate
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/api/config")
+def get_server_config():
+    return {
+        "api_url": os.getenv("API_BASE_URL", ""),
+        "model": os.getenv("MODEL_NAME", "")
+    }
+
+
 @app.get("/api/novels")
 def scan_novels():
     """递归扫描所有.txt小说文件"""
-    base_path = DEFAULT_NOVEL_PATH
+    if not DEFAULT_NOVEL_PATH.exists():
+        raise HTTPException(status_code=400, detail=f"小说目录不存在: {DEFAULT_NOVEL_PATH}（可通过NOVEL_PATH配置）")
+
+    base_path = str(DEFAULT_NOVEL_PATH)
 
     exclude_keywords = {'venv', '__pycache__', '.git', 'node_modules', 'pip', 'site-packages', 'dist-info', '.tox', '.eggs', 'novel-analyzer'}
 
@@ -116,25 +179,17 @@ def scan_novels():
 @app.get("/api/novel/{path:path}")
 def read_novel(path: str):
     """读取指定小说内容（限制长度）"""
-    base_path = DEFAULT_NOVEL_PATH
-    full_path = os.path.join(base_path, path)
-
-    if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
-
-    if not full_path.endswith('.txt'):
-        raise HTTPException(status_code=400, detail="仅支持.txt文件")
+    full_path = _safe_novel_path(DEFAULT_NOVEL_PATH, path)
 
     try:
-        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
+        content = full_path.read_text(encoding="utf-8", errors="ignore")
 
         if len(content) > 80000:
             content = content[:80000] + "\n\n... (内容已截断，分析可能不完整)"
 
         return {
-            "name": os.path.basename(path),
-            "path": path,
+            "name": full_path.name,
+            "path": str(Path(path).as_posix()),
             "content": content,
             "length": len(content)
         }
@@ -142,21 +197,20 @@ def read_novel(path: str):
         raise HTTPException(status_code=400, detail=f"读取失败: {str(e)}")
 
 
-@app.post("/api/test-connection")
-def test_connection(req: AnalyzeRequest):
+@app.get("/api/test-connection")
+def test_connection():
     """测试API连接"""
-    if not req.api_url or not req.api_key or not req.model:
-        raise HTTPException(status_code=400, detail="请填写完整的API配置")
+    api_url, api_key, model = _get_llm_config()
 
     try:
         response = requests.post(
-            f"{req.api_url.rstrip('/')}/chat/completions",
+            f"{api_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {req.api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": req.model,
+                "model": model,
                 "messages": [{"role": "user", "content": "Hi"}],
                 "max_tokens": 10
             },
@@ -182,8 +236,7 @@ def test_connection(req: AnalyzeRequest):
 @app.post("/api/analyze")
 def analyze_novel(req: AnalyzeRequest):
     """调用LLM分析小说 - 支持多角色多关系"""
-    if not req.api_url or not req.api_key or not req.model:
-        raise HTTPException(status_code=400, detail="请填写完整的API配置")
+    api_url, api_key, model = _get_llm_config()
 
     prompt_v1 = f"""
 As a professional literary analyst specializing in adult fiction, analyze this novel comprehensively.
@@ -318,13 +371,13 @@ Write a comprehensive summary (200-300 characters) covering:
             _last_api_response[0] = None
             try:
                 response = requests.post(
-                    f"{req.api_url.rstrip('/')}/chat/completions",
+                    f"{api_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {req.api_key}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": req.model,
+                        "model": model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 1.0
                     },
@@ -403,7 +456,7 @@ Write a comprehensive summary (200-300 characters) covering:
 
     if not analysis:
         error_msg = f"分析失败: {last_error}"
-        if raw_response:
+        if raw_response and DEBUG:
             error_msg += f"\n\n原始响应:\n{raw_response[:2000]}"
         elif "返回内容过短" in last_error:
             error_msg += "\n\n原始响应内容太短，API可能拦截了请求"
@@ -415,5 +468,9 @@ Write a comprehensive summary (200-300 characters) covering:
 
 if __name__ == "__main__":
     import uvicorn
-    print("\n  ➜  Local:   http://localhost:6021\n")
-    uvicorn.run(app, host="0.0.0.0", port=6021, log_level="warning")
+    host = os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1"
+    port = int(os.getenv("PORT", "6103"))
+    log_level = os.getenv("LOG_LEVEL", "warning")
+    display_host = "localhost" if host in {"0.0.0.0", "::"} else host
+    print(f"\n  ➜  Local:   http://{display_host}:{port}\n")
+    uvicorn.run(app, host=host, port=port, log_level=log_level)

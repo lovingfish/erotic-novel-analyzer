@@ -3,6 +3,21 @@
  * 支持多角色、多关系、性癖分析
  */
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
+}
+
+function sanitizeFilename(name) {
+    const base = String(name ?? '').replace(/[\\/:*?"<>|]+/g, '_').trim();
+    return base || 'report';
+}
+
 // 获取DaisyUI主题颜色
 function getThemeColors() {
     const style = getComputedStyle(document.documentElement);
@@ -233,7 +248,7 @@ function renderCharCard(char, type) {
             <div class="char-header">
                 <div class="char-avatar ${type}">${type === 'male' ? 'M' : 'F'}</div>
                 <div class="char-info">
-                    <div class="char-name">${char.name}</div>
+                    <div class="char-name">${escapeHtml(char.name)}</div>
                     <div class="char-role">${type === 'male' ? '男性' : '女性'}</div>
                 </div>
                 ${isFemale ? `
@@ -246,20 +261,20 @@ function renderCharCard(char, type) {
             <div class="char-details">
                 <div class="char-detail">
                     <span class="detail-label">身份</span>
-                    <span class="detail-value">${char.identity || '未知'}</span>
+                    <span class="detail-value">${escapeHtml(char.identity || '未知')}</span>
                 </div>
                 <div class="char-detail">
                     <span class="detail-label">性格</span>
-                    <span class="detail-value">${char.personality || '未知'}</span>
+                    <span class="detail-value">${escapeHtml(char.personality || '未知')}</span>
                 </div>
                 <div class="char-detail sexual">
                     <span class="detail-label">性癖爱好</span>
-                    <span class="detail-value">${char.sexual_preferences || '未知'}</span>
+                    <span class="detail-value">${escapeHtml(char.sexual_preferences || '未知')}</span>
                 </div>
                 ${hasLewdness && char.lewdness_analysis ? `
                 <div class="char-detail lewdness">
                     <span class="detail-label">淫荡指数分析</span>
-                    <span class="detail-value lewdness-text">${char.lewdness_analysis}</span>
+                    <span class="detail-value lewdness-text">${escapeHtml(char.lewdness_analysis)}</span>
                 </div>
                 ` : ''}
             </div>
@@ -288,11 +303,11 @@ function renderFirstSexScene(data) {
         <div class="sex-scene-card">
             <div class="scene-header">
                 <span class="scene-badge">首次</span>
-                <span class="scene-participants">${scene.participants?.join(' + ') || '?'}</span>
+                <span class="scene-participants">${(scene.participants || []).map(p => escapeHtml(p)).join(' + ') || '?'}</span>
             </div>
-            <div class="scene-chapter">${scene.chapter}</div>
-            <div class="scene-location">${scene.location}</div>
-            <div class="scene-description">${scene.description}</div>
+            <div class="scene-chapter">${escapeHtml(scene.chapter)}</div>
+            <div class="scene-location">${escapeHtml(scene.location)}</div>
+            <div class="scene-description">${escapeHtml(scene.description)}</div>
         </div>
     `).join('');
 }
@@ -317,9 +332,9 @@ function renderSexSceneCount(data) {
                 <div class="scene-item">
                     <div class="scene-number">${i + 1}</div>
                     <div class="scene-info">
-                        <div class="scene-participants-small">${scene.participants?.join(', ') || '?'}</div>
-                        <div class="scene-chapter-small">${scene.chapter}</div>
-                        <div class="scene-location-small">${scene.location}</div>
+                        <div class="scene-participants-small">${(scene.participants || []).map(p => escapeHtml(p)).join(', ') || '?'}</div>
+                        <div class="scene-chapter-small">${escapeHtml(scene.chapter)}</div>
+                        <div class="scene-location-small">${escapeHtml(scene.location)}</div>
                     </div>
                 </div>
             `).join('')}
@@ -343,9 +358,9 @@ function renderRelationshipProgress(data) {
                 <div class="progress-item">
                     <div class="progress-dot ${i === 0 ? 'first' : ''}"></div>
                     <div class="progress-content">
-                        <div class="progress-chapter">${p.chapter}</div>
-                        <div class="progress-stage">${p.stage}</div>
-                        <div class="progress-desc">${p.description}</div>
+                        <div class="progress-chapter">${escapeHtml(p.chapter)}</div>
+                        <div class="progress-stage">${escapeHtml(p.stage)}</div>
+                        <div class="progress-desc">${escapeHtml(p.description)}</div>
                     </div>
                 </div>
             `).join('')}
@@ -374,15 +389,15 @@ function renderRelationshipSummary(data) {
             <div class="novel-meta-grid">
                 <div class="novel-meta-item">
                     <span class="meta-label">世界观</span>
-                    <span class="meta-value">${novelInfo.world_setting}</span>
+                    <span class="meta-value">${escapeHtml(novelInfo.world_setting)}</span>
                 </div>
                 <div class="novel-meta-item">
                     <span class="meta-label">章节数</span>
-                    <span class="meta-value">${novelInfo.chapter_count || '未知'}</span>
+                    <span class="meta-value">${escapeHtml(novelInfo.chapter_count || '未知')}</span>
                 </div>
                 <div class="novel-meta-item">
                     <span class="meta-label">状态</span>
-                    <span class="meta-value ${novelInfo.is_completed ? 'completed' : 'ongoing'}'">${novelInfo.is_completed ? '已完结' : '连载中'}${novelInfo.completion_note ? ' - ' + novelInfo.completion_note : ''}</span>
+                    <span class="meta-value ${novelInfo.is_completed ? 'completed' : 'ongoing'}">${novelInfo.is_completed ? '已完结' : '连载中'}${novelInfo.completion_note ? ' - ' + escapeHtml(novelInfo.completion_note) : ''}</span>
                 </div>
             </div>
         </div>
@@ -394,13 +409,13 @@ function renderRelationshipSummary(data) {
                 <div class="char-names-group male">
                     <div class="char-group-label">男性角色 (${males.length})</div>
                     <div class="char-names-list">
-                        ${males.map(c => `<span class="char-name-tag male">${c.name}</span>`).join('')}
+                        ${males.map(c => `<span class="char-name-tag male">${escapeHtml(c.name)}</span>`).join('')}
                     </div>
                 </div>
                 <div class="char-names-group female">
                     <div class="char-group-label">女性角色 (${females.length})</div>
                     <div class="char-names-list">
-                        ${females.map(c => `<span class="char-name-tag female">${c.name}</span>`).join('')}
+                        ${females.map(c => `<span class="char-name-tag female">${escapeHtml(c.name)}</span>`).join('')}
                     </div>
                 </div>
             </div>
@@ -408,19 +423,20 @@ function renderRelationshipSummary(data) {
         
         <div class="summary-section">
             <div class="summary-title">剧情总结</div>
-            <div class="summary-content">${data.summary || '暂无总结'}</div>
+            <div class="summary-content">${escapeHtml(data.summary || '暂无总结')}</div>
         </div>
     `;
 }
 
 function exportReport(analysis, novelName) {
+    const safeNovelName = escapeHtml(novelName);
     const html = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小说分析报告 - ${novelName}</title>
+    <title>小说分析报告 - ${safeNovelName}</title>
     <style>
         body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #0f0f1a; color: #e8e8f0; }
         h1 { color: #6366f1; text-align: center; border-bottom: 2px solid #6366f1; padding-bottom: 15px; }
@@ -437,16 +453,16 @@ function exportReport(analysis, novelName) {
     </style>
 </head>
 <body>
-    <h1>${novelName} - 分析报告</h1>
+    <h1>${safeNovelName} - 分析报告</h1>
 
     <div class="section">
         <h2>角色分析</h2>
         ${(analysis.characters || []).map(char => `
             <div class="card ${char.gender === 'male' ? 'male-card' : 'female-card'}">
-                <h3>${char.name} (${char.gender === 'male' ? '男' : '女'})</h3>
-                <p>身份: ${char.identity || '未知'}</p>
-                <p>性格: ${char.personality || '未知'}</p>
-                <p><strong>性癖爱好:</strong> ${char.sexual_preferences || '未知'}</p>
+                <h3>${escapeHtml(char.name)} (${char.gender === 'male' ? '男' : '女'})</h3>
+                <p>身份: ${escapeHtml(char.identity || '未知')}</p>
+                <p>性格: ${escapeHtml(char.personality || '未知')}</p>
+                <p><strong>性癖爱好:</strong> ${escapeHtml(char.sexual_preferences || '未知')}</p>
             </div>
         `).join('') || '<p>暂无角色数据</p>'}
     </div>
@@ -454,8 +470,8 @@ function exportReport(analysis, novelName) {
     <div class="section">
         <h2>关系一览</h2>
         ${(analysis.relationships || []).map(rel => `
-            <p><strong>${rel.from}</strong> → <strong>${rel.to}</strong>: ${rel.type}</p>
-            <p style="color: #a0a0b8; font-size: 14px;">${rel.description || ''}</p>
+            <p><strong>${escapeHtml(rel.from)}</strong> → <strong>${escapeHtml(rel.to)}</strong>: ${escapeHtml(rel.type)}</p>
+            <p style="color: #a0a0b8; font-size: 14px;">${escapeHtml(rel.description || '')}</p>
         `).join('') || '<p>暂无关系数据</p>'}
     </div>
 
@@ -463,10 +479,10 @@ function exportReport(analysis, novelName) {
         <h2>首次亲密</h2>
         ${(analysis.first_sex_scenes || []).map(scene => `
             <div class="card">
-                <p><strong>参与者:</strong> ${scene.participants?.join(' + ') || '?'}</p>
-                <p><strong>章节:</strong> ${scene.chapter}</p>
-                <p><strong>地点:</strong> ${scene.location}</p>
-                <p>${scene.description}</p>
+                <p><strong>参与者:</strong> ${(scene.participants || []).map(p => escapeHtml(p)).join(' + ') || '?'}</p>
+                <p><strong>章节:</strong> ${escapeHtml(scene.chapter)}</p>
+                <p><strong>地点:</strong> ${escapeHtml(scene.location)}</p>
+                <p>${escapeHtml(scene.description)}</p>
             </div>
         `).join('') || '<p>暂无数据</p>'}
     </div>
@@ -478,7 +494,7 @@ function exportReport(analysis, novelName) {
         <table>
             <tr><th>次数</th><th>章节</th><th>参与者</th><th>地点</th></tr>
             ${(analysis.sex_scenes?.scenes || []).map((s, i) => `
-                <tr><td>${i + 1}</td><td>${s.chapter}</td><td>${s.participants?.join(', ') || '?'}</td><td>${s.location}</td></tr>
+                <tr><td>${i + 1}</td><td>${escapeHtml(s.chapter)}</td><td>${(s.participants || []).map(p => escapeHtml(p)).join(', ') || '?'}</td><td>${escapeHtml(s.location)}</td></tr>
             `).join('') || ''}
         </table>
     </div>
@@ -487,15 +503,15 @@ function exportReport(analysis, novelName) {
         <h2>关系发展</h2>
         ${(analysis.evolution || []).map(p => `
             <div class="card">
-                <p><strong>${p.stage}</strong> (${p.chapter})</p>
-                <p>${p.description}</p>
+                <p><strong>${escapeHtml(p.stage)}</strong> (${escapeHtml(p.chapter)})</p>
+                <p>${escapeHtml(p.description)}</p>
             </div>
         `).join('') || '<p>暂无数据</p>'}
     </div>
 
     <div class="section">
         <h2>总结</h2>
-        <p>${analysis.summary || '无'}</p>
+        <p>${escapeHtml(analysis.summary || '无')}</p>
     </div>
 </body>
 </html>
@@ -505,7 +521,7 @@ function exportReport(analysis, novelName) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${novelName.replace('.txt', '')}_分析报告.html`;
+    a.download = `${sanitizeFilename(novelName).replace(/\\.txt$/i, '')}_分析报告.html`;
     a.click();
     URL.revokeObjectURL(url);
 }

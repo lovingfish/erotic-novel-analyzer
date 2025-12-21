@@ -16,7 +16,7 @@
             <span class="text-xl font-semibold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">小说分析器</span>
         </div>
         <div class="flex-none gap-1">
-            <button class="btn btn-ghost btn-circle" @click="settingsOpen = true" title="设置">
+            <button class="btn btn-ghost btn-circle" @click="settingsOpen = true" title="配置（只读）">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             </button>
             <button class="btn btn-ghost btn-circle" @click="logsOpen = true" title="日志">
@@ -109,23 +109,22 @@
     <!-- 设置模态框 -->
     <dialog class="modal" :class="{ 'modal-open': settingsOpen }">
         <div class="modal-box">
-            <h3 class="font-bold text-lg">设置</h3>
+            <h3 class="font-bold text-lg">配置（只读）</h3>
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" @click="settingsOpen = false">✕</button>
 
-            <div class="form-control w-full mt-4">
-                <label class="label"><span class="label-text">API URL</span></label>
-                <input type="text" class="input input-bordered w-full" x-model="apiUrl" placeholder="https://api.example.com/v1">
+            <div class="alert mt-4">
+                <span>所有配置均从服务端 <code class="px-1">.env</code> 读取，网页无法修改；要改请编辑 <code class="px-1">.env</code> 后重启服务。</span>
             </div>
-            <div class="form-control w-full mt-2">
-                <label class="label"><span class="label-text">API Key</span></label>
-                <div class="join w-full">
-                    <input :type="showKey ? 'text' : 'password'" class="input input-bordered join-item flex-1" x-model="apiKey" placeholder="sk-...">
-                    <button class="btn join-item" @click="showKey = !showKey" x-text="showKey ? '隐藏' : '显示'"></button>
+
+            <div class="mt-4 text-sm space-y-2">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="opacity-70">API URL</span>
+                    <span class="font-mono text-xs truncate max-w-[260px]" x-text="serverConfig.api_url || '-'"></span>
                 </div>
-            </div>
-            <div class="form-control w-full mt-2">
-                <label class="label"><span class="label-text">模型名称</span></label>
-                <input type="text" class="input input-bordered w-full" x-model="modelName" placeholder="gpt-4">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="opacity-70">MODEL</span>
+                    <span class="font-mono text-xs truncate max-w-[260px]" x-text="serverConfig.model || '-'"></span>
+                </div>
             </div>
 
             <div class="flex items-center gap-2 mt-4" x-show="testResult">
@@ -138,7 +137,7 @@
                     <span class="loading loading-spinner loading-sm" x-show="testLoading"></span>
                     测试连接
                 </button>
-                <button class="btn btn-primary" @click="saveConfig()">保存</button>
+                <button class="btn" @click="settingsOpen = false">关闭</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop bg-black/50" @click="settingsOpen = false"></form>
@@ -172,10 +171,7 @@
                 theme: localStorage.getItem('theme') || 'dark',
                 settingsOpen: false,
                 logsOpen: false,
-                apiUrl: localStorage.getItem('novel_analyzer_api_url') || '',
-                apiKey: localStorage.getItem('novel_analyzer_api_key') || '',
-                modelName: localStorage.getItem('novel_analyzer_model_name') || '',
-                showKey: false,
+                serverConfig: { api_url: '', model: '' },
                 selectedNovel: null,
                 currentNovelContent: null,
                 currentAnalysis: null,
@@ -204,9 +200,23 @@
                             setTimeout(() => renderRelationshipGraph('relationshipChart', this.currentAnalysis), 50);
                         }
                     });
+                    localStorage.removeItem('novel_analyzer_api_url');
+                    localStorage.removeItem('novel_analyzer_api_key');
+                    localStorage.removeItem('novel_analyzer_model_name');
+                    this.loadServerConfig();
                     this.scanNovels();
                     this.restoreAnalysis();
                     this.log('info', '应用初始化完成');
+                },
+
+                async loadServerConfig() {
+                    try {
+                        const res = await fetch('/api/config', { cache: 'no-store' });
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        this.serverConfig = { api_url: data.api_url || '', model: data.model || '' };
+                    } catch {
+                    }
                 },
 
                 toggleTheme() {
@@ -219,14 +229,27 @@
                     const colors = { info: 'text-info', success: 'text-success', error: 'text-error', warning: 'text-warning' };
                     const entry = document.createElement('div');
                     entry.className = `p-2 rounded bg-base-300 ${colors[type] || ''}`;
-                    entry.innerHTML = `<span class="opacity-50">[${now}]</span> ${message}${data ? `<pre class="mt-1 text-xs opacity-70 whitespace-pre-wrap">${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}</pre>` : ''}`;
+
+                    const time = document.createElement('span');
+                    time.className = 'opacity-50';
+                    time.textContent = `[${now}]`;
+                    entry.appendChild(time);
+                    entry.appendChild(document.createTextNode(` ${String(message ?? '')}`));
+
+                    if (data !== null && data !== undefined) {
+                        const pre = document.createElement('pre');
+                        pre.className = 'mt-1 text-xs opacity-70 whitespace-pre-wrap';
+                        pre.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+                        entry.appendChild(pre);
+                    }
+
                     content.appendChild(entry);
                     content.scrollTop = content.scrollHeight;
                     console.log(`[${type}] ${message}`, data);
                 },
 
                 clearLog() {
-                    document.getElementById('logContent').innerHTML = '';
+                    document.getElementById('logContent').replaceChildren();
                 },
 
                 showToast(msg, type = 'info') {
@@ -234,26 +257,19 @@
                     const alertClass = { success: 'alert-success', error: 'alert-error', info: 'alert-info', warning: 'alert-warning' };
                     const toast = document.createElement('div');
                     toast.className = `alert ${alertClass[type] || 'alert-info'} shadow-lg`;
-                    toast.innerHTML = `<span>${msg}</span>`;
+                    const span = document.createElement('span');
+                    span.textContent = String(msg ?? '');
+                    toast.appendChild(span);
                     container.appendChild(toast);
                     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
                 },
 
                 async testConnection() {
-                    if (!this.apiUrl || !this.apiKey || !this.modelName) {
-                        this.testResult = 'error';
-                        this.testResultMsg = '请填写完整配置';
-                        return;
-                    }
                     this.testLoading = true;
                     this.testResult = '';
-                    this.log('info', `测试连接: ${this.apiUrl}`);
+                    this.log('info', `测试连接`);
                     try {
-                        const res = await fetch('/api/test-connection', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ content: '', api_url: this.apiUrl, api_key: this.apiKey, model: this.modelName })
-                        });
+                        const res = await fetch('/api/test-connection', { cache: 'no-store' });
                         const data = await res.json();
                         if (res.ok) {
                             this.testResult = 'success';
@@ -272,14 +288,6 @@
                     this.testLoading = false;
                 },
 
-                saveConfig() {
-                    localStorage.setItem('novel_analyzer_api_url', this.apiUrl);
-                    localStorage.setItem('novel_analyzer_api_key', this.apiKey);
-                    localStorage.setItem('novel_analyzer_model_name', this.modelName);
-                    this.showToast('配置已保存', 'success');
-                    this.settingsOpen = false;
-                },
-
                 async scanNovels() {
                     this.log('info', '扫描小说目录...');
                     try {
@@ -296,29 +304,58 @@
 
                 renderFolderList(novels) {
                     const container = document.getElementById('folderList');
-                    container.innerHTML = novels.map(f => `
-                        <div class="collapse bg-base-300 rounded-lg">
-                            <input type="checkbox">
-                            <div class="collapse-title text-sm font-medium flex items-center gap-2 pr-4">
-                                <span>📁</span>
-                                <span class="flex-1 truncate">${f.folder}</span>
-                                <span class="badge badge-sm">${f.files.length}</span>
-                            </div>
-                            <div class="collapse-content space-y-1">
-                                ${f.files.map(file => `
-                                    <div class="p-2 rounded cursor-pointer hover:bg-base-100 text-sm truncate flex items-center gap-2 file-item"
-                                         data-path="${file.path.replace(/\\/g, '\\\\')}" data-name="${file.name}">
-                                        <span>📄</span>
-                                        <span class="truncate">${file.name}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `).join('');
+                    container.replaceChildren();
 
-                    container.querySelectorAll('.file-item').forEach(el => {
-                        el.addEventListener('click', () => this.selectNovel(el.dataset.path, el.dataset.name, el));
+                    const frag = document.createDocumentFragment();
+                    (novels || []).forEach(folder => {
+                        const collapse = document.createElement('div');
+                        collapse.className = 'collapse bg-base-300 rounded-lg w-full';
+
+                        const input = document.createElement('input');
+                        input.type = 'checkbox';
+
+                        const title = document.createElement('div');
+                        title.className = 'collapse-title text-sm font-medium flex items-center gap-2 pr-4 w-full';
+
+                        const folderIcon = document.createElement('span');
+                        folderIcon.textContent = '📁';
+
+                        const folderName = document.createElement('span');
+                        folderName.className = 'flex-1 min-w-0 truncate';
+                        folderName.textContent = String(folder.folder ?? '');
+
+                        const badge = document.createElement('span');
+                        badge.className = 'badge badge-sm shrink-0';
+                        badge.textContent = String((folder.files || []).length);
+
+                        title.append(folderIcon, folderName, badge);
+
+                        const content = document.createElement('div');
+                        content.className = 'collapse-content space-y-1 min-w-0';
+
+                        (folder.files || []).forEach(file => {
+                            const item = document.createElement('div');
+                            item.className = 'p-2 rounded cursor-pointer hover:bg-base-100 text-sm flex items-center gap-2 file-item min-w-0';
+                            item.dataset.path = String(file.path ?? '');
+                            item.dataset.name = String(file.name ?? '');
+
+                            const fileIcon = document.createElement('span');
+                            fileIcon.textContent = '📄';
+
+                            const name = document.createElement('span');
+                            name.className = 'flex-1 min-w-0 truncate';
+                            name.textContent = String(file.name ?? '');
+
+                            item.append(fileIcon, name);
+                            item.addEventListener('click', () => this.selectNovel(item.dataset.path, item.dataset.name, item));
+                            content.appendChild(item);
+                        });
+
+                        collapse.append(input, title, content);
+                        frag.appendChild(collapse);
                     });
+
+                    container.appendChild(frag);
                 },
 
                 async selectNovel(path, name, element) {
@@ -346,10 +383,6 @@
                         this.errorMsg = '请先选择一本小说';
                         return;
                     }
-                    if (!this.apiUrl || !this.apiKey || !this.modelName) {
-                        this.errorMsg = '请先在设置中填写API配置';
-                        return;
-                    }
 
                     this.errorMsg = '';
                     this.loading = true;
@@ -360,10 +393,7 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                content: this.currentNovelContent,
-                                api_url: this.apiUrl,
-                                api_key: this.apiKey,
-                                model: this.modelName
+                                content: this.currentNovelContent
                             })
                         });
                         const data = await res.json();
@@ -386,31 +416,52 @@
 
                 renderAllData(data) {
                     const chars = data.characters || [];
-                    const males = chars.filter(c => c.gender === 'male').length;
-                    const females = chars.filter(c => c.gender === 'female').length;
-                    const novelInfo = data.novel_info || {};
                     const wordCount = this.currentNovelContent ? this.currentNovelContent.length : 0;
 
-                    document.getElementById('quickStats').innerHTML = `
-                        <div class="stats stats-vertical lg:stats-horizontal shadow w-full mb-4">
-                            <div class="stat">
-                                <div class="stat-title">亲密次数</div>
-                                <div class="stat-value text-primary">${data.sex_scenes?.total_count || 0}</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-title">关系对</div>
-                                <div class="stat-value text-secondary">${data.relationships?.length || 0}</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-title">章节数</div>
-                                <div class="stat-value">${novelInfo.chapter_count || '-'}</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-title">字数</div>
-                                <div class="stat-value">${wordCount > 10000 ? (wordCount / 10000).toFixed(1) + '万' : wordCount}</div>
-                            </div>
-                        </div>
-                    `;
+                    const toInt = (value, fallback = 0) => {
+                        const n = Number(value);
+                        return Number.isFinite(n) ? Math.trunc(n) : fallback;
+                    };
+
+                    const sexCount = toInt(data.sex_scenes?.total_count, 0);
+                    const relationshipCount = Array.isArray(data.relationships) ? data.relationships.length : 0;
+                    const characterCount = chars.length;
+                    const wordCountText = wordCount > 10000 ? (wordCount / 10000).toFixed(1) + '万' : String(wordCount);
+
+                    const quickStats = document.getElementById('quickStats');
+                    quickStats.replaceChildren();
+
+                    const section = document.createElement('div');
+                    section.className = 'novel-meta-section';
+
+                    const grid = document.createElement('div');
+                    grid.className = 'quick-stats-grid';
+
+                    const makeStat = (title, value, valueClass = '') => {
+                        const item = document.createElement('div');
+                        item.className = 'quick-stat';
+
+                        const t = document.createElement('div');
+                        t.className = 'quick-stat-title';
+                        t.textContent = title;
+
+                        const v = document.createElement('div');
+                        v.className = `quick-stat-value ${valueClass}`.trim();
+                        v.textContent = String(value);
+
+                        item.append(t, v);
+                        return item;
+                    };
+
+                    grid.append(
+                        makeStat('亲密次数', sexCount, 'text-primary'),
+                        makeStat('关系对', relationshipCount, 'text-secondary'),
+                        makeStat('角色数', characterCount, ''),
+                        makeStat('字数', wordCountText, '')
+                    );
+
+                    section.appendChild(grid);
+                    quickStats.appendChild(section);
 
                     renderRelationshipSummary(data);
                     renderCharacters(data);
@@ -462,9 +513,9 @@
                     document.querySelectorAll('.file-item').forEach(el => el.classList.remove('bg-primary/20', 'border-l-2', 'border-primary'));
                     ['quickStats', 'relationshipSummary', 'mainCharacters', 'firstSexScene', 'sexSceneCount', 'relationshipProgress'].forEach(id => {
                         const el = document.getElementById(id);
-                        if (el) el.innerHTML = '';
+                        if (el) el.replaceChildren();
                     });
-                    document.getElementById('relationshipChart').innerHTML = '';
+                    document.getElementById('relationshipChart').replaceChildren();
                     this.showToast('已清空分析结果', 'info');
                     this.settingsOpen = false;
                     this.log('info', '已清空所有数据');

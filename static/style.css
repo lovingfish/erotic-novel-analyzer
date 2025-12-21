@@ -251,6 +251,16 @@
 .meta-value.completed { color: oklch(var(--su)); }
 .meta-value.ongoing { color: oklch(var(--wa)); }
 
+/* 快速统计 */
+.quick-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+.quick-stat { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.quick-stat-title { font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; }
+.quick-stat-value { font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+
 /* 角色名称展示 - iOS风格 */
 .char-names-section {
     background: oklch(var(--b2));
@@ -305,4 +315,6 @@
     .char-grid { grid-template-columns: 1fr; }
     .novel-meta-grid { grid-template-columns: 1fr; }
     .char-names-grid { grid-template-columns: 1fr; }
+    .quick-stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .quick-stat-value { font-size: 1.75rem; }
 }
