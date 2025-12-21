@@ -1,32 +1,29 @@
 # 色情小说分析器
 
-基于LLM的成人小说分析工具 - 角色关系、性癖分析、亲密场景统计
+基于 LLM 的本地小说分析工具：角色关系、性癖画像、亲密场景与进度可视化。支持任意 OpenAI 兼容 API；所有敏感配置仅保存在服务端 `.env`。
 
-## 功能特性
+## 你能得到什么
 
-- 自动扫描本地小说文件夹
-- LLM智能分析：角色性格/性癖、人物关系、亲密场景
-- 可视化展示：力导向关系图、首次场景时间线、关系发展进度
-- 支持配置任意OpenAI兼容API
+- 自动扫描本地小说目录（仅 `.txt`）
+- 智能分析：角色性格/性癖、人物关系、亲密场景统计
+- 可视化：力导向关系图、首次场景时间线、关系发展进度
+- 更安全的默认值：只监听本机、前端不接触 API Key
 
-## 使用方法
-
-### 1. 安装依赖
+## 快速开始（Windows）
 
 ```bash
-# （可选）创建虚拟环境
 python -m venv venv
 .\venv\Scripts\activate
-
-# 安装依赖
 pip install -r requirements.txt
+copy .env.example .env
+start.bat
 ```
 
-### 2. 配置（仅 `.env`）
+启动后访问：`http://127.0.0.1:6103`
 
-为安全起见：网页端不提供任何配置入口，所有配置都从服务端 `.env` 读取（`.env` 不会进 Git）。
+## 配置（仅服务端 `.env`）
 
-从 `.env.example` 复制一份为 `.env`，再按需修改：
+从 `.env.example` 复制为 `.env` 后修改：
 
 ```env
 NOVEL_PATH=你的小说根目录
@@ -38,71 +35,64 @@ PORT=6103
 DEBUG=false
 ```
 
-### 3. 启动服务
+| 配置项 | 说明 | 示例 |
+| --- | --- | --- |
+| `NOVEL_PATH` | 小说根目录 | `X:\Gallery\h小说` |
+| `API_BASE_URL` | OpenAI 兼容 API 地址 | `https://api.example.com/v1` |
+| `API_KEY` | API 密钥（仅服务端） | `sk-xxx` |
+| `MODEL_NAME` | 模型名称 | `gpt-4o` |
+| `HOST` | 监听地址（默认仅本机） | `127.0.0.1` |
+| `PORT` | 端口 | `6103` |
+| `DEBUG` | 显示 LLM 原始响应错误 | `false` |
 
-**Windows (使用提供的脚本):**
+## 运行与开发命令
 
-```bash
-start.bat
+- 一键启动（会安装依赖并启动）：`start.bat`
+- 手动启动：`python backend.py`
+- 开发热重载：`uvicorn backend:app --reload --host 127.0.0.1 --port 6103`
+
+## 使用步骤
+
+1. 打开 `http://127.0.0.1:6103`
+2. 顶部下拉框选择小说
+3. 点击“开始分析”，查看各个 Tab 的结果
+4. （可选）右上角“配置（只读）”里点击“测试连接”
+
+## 架构概览
+
+```text
+浏览器(Alpine.js + DaisyUI)
+        |
+        |  /api/*
+        v
+FastAPI (backend.py) ----> OpenAI 兼容 API
+        |
+        v
+本地 .txt 文件（NOVEL_PATH）
 ```
-
-`start.bat` 会优先使用 `venv\\Scripts\\python.exe`（存在则用），并从 `.env` 读取 `HOST/PORT/NOVEL_PATH` 等配置。
-（准确说：`backend.py` 会自动读取 `.env`，脚本本身不解析 `.env`，避免覆盖配置。）
-
-**手动启动:**
-
-```bash
-python backend.py
-```
-
-### 4. 使用
-
-1. 打开浏览器访问 `http://127.0.0.1:6103`
-2. 从顶部下拉框选择小说
-3. 点击"开始分析"
-4. （可选）右上角"配置（只读）"里点击"测试连接"
-5. 查看分析结果，支持多个Tab切换
-
-## 配置说明
-
-| 配置项       | 说明               | 示例                      |
-| ------------ | ------------------ | ------------------------- |
-| NOVEL_PATH   | 小说根目录         | X:\\Gallery\\h小说         |
-| API_BASE_URL | OpenAI兼容API地址   | https://api.example.com/v1 |
-| API_KEY      | API密钥             | sk-xxx                    |
-| MODEL_NAME   | 模型名称            | gpt-4o                    |
-| HOST         | 监听地址(默认本机)  | 127.0.0.1                 |
-| PORT         | 端口                | 6103                      |
-| DEBUG        | 显示LLM原始响应错误 | false                     |
-
-## 安全提示
-
-- 默认只监听 `127.0.0.1`；除非你知道风险，否则不要把 `HOST` 改成 `0.0.0.0`（会把本机文件列表/内容暴露给局域网）。
-- API Key 仅存在于服务端 `.env`，网页不会读取/保存/发送 API Key。
 
 ## 目录结构
 
 ```
-novel-analyzer/
-├── backend.py          # FastAPI后端
-├── .env                # API配置
-├── .env.example        # 配置模板
-├── requirements.txt    # 依赖列表
-├── README.md           # 说明文档
-├── templates/
-│   └── index.html      # 前端页面
-├── static/
-│   ├── style.css       # 样式
-│   └── chart-view.js   # 可视化逻辑
-└── start.bat           # 启动脚本
+.
+├── backend.py              # FastAPI 后端：扫描文件、调用 LLM、/api/*
+├── templates/index.html    # 单页前端（Alpine.js）
+├── static/                 # 样式与可视化逻辑（如 chart-view.js）
+├── requirements.txt        # Python 依赖
+├── .env.example            # 配置模板（复制为 .env）
+└── start.bat               # Windows 启动脚本
 ```
 
-## 依赖
+## 安全与合规
 
-- Python 3.8+
-- fastapi
-- uvicorn
-- python-multipart
-- jinja2
-- python-dotenv
-- requests
+- 默认只监听 `127.0.0.1`；不要随意把 `HOST` 改成 `0.0.0.0`，否则会把本机文件列表/内容暴露给局域网。
+- `.env` 不会进 Git；前端不会读取/保存/发送 `API_KEY`。
+- 请确保小说与分析用途符合当地法律与内容来源授权。
+
+## 贡献指南
+
+请先读 `AGENTS.md`（包含仓库结构、命令、提交规范与安全注意事项）。
+
+## 许可证
+
+本项目采用 MIT 许可证，详见 `LICENSE`。
