@@ -1,0 +1,163 @@
+{
+  "novel_info": {
+    "world_setting": "现代都市（豪门 + 职场）",
+    "chapter_count": 12,
+    "is_completed": true,
+    "completion_note": "主线收束，留有余韵"
+  },
+  "summary": "一段发生在职场与豪门边界的故事。几位主角在利益与情感的拉扯中反复试探，关系逐渐从交易走向更复杂的牵绊。",
+  "characters": [
+    {
+      "name": "陈默",
+      "gender": "male",
+      "identity": "投行经理，28岁",
+      "personality": "克制、算计强，关键时刻很果断",
+      "sexual_preferences": "偏主导，喜欢明确的节奏与掌控感"
+    },
+    {
+      "name": "周野",
+      "gender": "male",
+      "identity": "创业者，30岁",
+      "personality": "外放、爱开玩笑，行动力很强",
+      "sexual_preferences": "偏主动，喜欢新鲜感与情绪互动"
+    },
+    {
+      "name": "林岚",
+      "gender": "female",
+      "identity": "豪门继承人，26岁",
+      "personality": "自信、强势，边界感清晰",
+      "sexual_preferences": "偏主动，喜欢情绪推进与仪式感",
+      "lewdness_score": 95,
+      "lewdness_analysis": "主动性极强、频率高、偏好明确且愿意尝试新花样"
+    },
+    {
+      "name": "苏浅",
+      "gender": "female",
+      "identity": "公关总监，27岁",
+      "personality": "成熟、冷静，善于洞察人心",
+      "sexual_preferences": "偏平衡，喜欢掌控与被掌控交替",
+      "lewdness_score": 75,
+      "lewdness_analysis": "频率较高，愿意尝试多种玩法，但仍保留原则"
+    },
+    {
+      "name": "叶澜",
+      "gender": "female",
+      "identity": "律师助理，24岁",
+      "personality": "温和、敏感，慢热",
+      "sexual_preferences": "偏被动，喜欢安全感与循序渐进",
+      "lewdness_score": 55,
+      "lewdness_analysis": "偶尔主动，更多受情绪驱动，整体中等"
+    },
+    {
+      "name": "宋棠",
+      "gender": "female",
+      "identity": "产品经理，25岁",
+      "personality": "理性、嘴硬心软",
+      "sexual_preferences": "偏被动，喜欢稳定与明确承诺",
+      "lewdness_score": 35,
+      "lewdness_analysis": "频率偏低，更多在确定关系后才会主动"
+    },
+    {
+      "name": "沈青",
+      "gender": "female",
+      "identity": "研究生，23岁",
+      "personality": "害羞、谨慎，容易脸红",
+      "sexual_preferences": "偏被动，喜欢温柔与照顾",
+      "lewdness_score": 10,
+      "lewdness_analysis": "频率很低，主动性弱，偏保守"
+    },
+    {
+      "name": "楚然",
+      "gender": "female",
+      "identity": "摄影师，26岁",
+      "personality": "自由、随性",
+      "sexual_preferences": "偏情绪体验，风格不固定"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "陈默",
+      "to": "林岚",
+      "type": "恋人",
+      "start_way": "从合作关系逐渐靠近",
+      "description": "相互吸引又互相试探，最终确认关系"
+    },
+    {
+      "from": "周野",
+      "to": "苏浅",
+      "type": "固定炮友",
+      "start_way": "一次酒局后达成默契",
+      "description": "保持边界但频繁见面，情绪逐渐介入"
+    },
+    {
+      "from": "陈默",
+      "to": "叶澜",
+      "type": "一夜情",
+      "start_way": "压力下的冲动",
+      "description": "事后各自克制，关系未进一步推进"
+    },
+    {
+      "from": "周野",
+      "to": "宋棠",
+      "type": "暧昧",
+      "start_way": "工作磨合产生好感",
+      "description": "若即若离，情绪拉扯明显"
+    },
+    {
+      "from": "陈默",
+      "to": "沈青",
+      "type": "FWB",
+      "start_way": "在共同项目中互相依赖",
+      "description": "更像互相取暖，但不愿公开"
+    }
+  ],
+  "first_sex_scenes": [
+    {
+      "participants": ["陈默", "林岚"],
+      "chapter": "第3章",
+      "location": "酒店",
+      "description": "一次试探后迅速失控"
+    },
+    {
+      "participants": ["周野", "苏浅"],
+      "chapter": "第2章",
+      "location": "车里",
+      "description": "临界点被一句话点燃"
+    },
+    {
+      "participants": ["陈默", "叶澜"],
+      "chapter": "第5章",
+      "location": "公寓",
+      "description": "误会解除后的短暂放纵"
+    }
+  ],
+  "sex_scenes": {
+    "total_count": 18,
+    "scenes": [
+      { "chapter": "第1章", "participants": ["周野", "苏浅"], "location": "酒吧", "description": "情绪上头的拥吻" },
+      { "chapter": "第2章", "participants": ["周野", "苏浅"], "location": "车里", "description": "默契确认" },
+      { "chapter": "第3章", "participants": ["陈默", "林岚"], "location": "酒店", "description": "失控的试探" },
+      { "chapter": "第3章", "participants": ["陈默", "林岚"], "location": "酒店", "description": "关系升级" },
+      { "chapter": "第4章", "participants": ["周野", "宋棠"], "location": "公司", "description": "暧昧升温" },
+      { "chapter": "第5章", "participants": ["陈默", "叶澜"], "location": "公寓", "description": "误会后的靠近" },
+      { "chapter": "第5章", "participants": ["陈默", "林岚"], "location": "停车场", "description": "控制与反控制" },
+      { "chapter": "第6章", "participants": ["陈默", "沈青"], "location": "图书馆", "description": "短暂的依赖" },
+      { "chapter": "第6章", "participants": ["陈默", "林岚"], "location": "家中", "description": "情绪宣泄" },
+      { "chapter": "第7章", "participants": ["周野", "苏浅"], "location": "公寓", "description": "边界被打破" },
+      { "chapter": "第7章", "participants": ["周野", "宋棠"], "location": "楼梯间", "description": "试探与回避" },
+      { "chapter": "第8章", "participants": ["陈默", "林岚"], "location": "办公室", "description": "危险的亲密" },
+      { "chapter": "第8章", "participants": ["陈默", "沈青"], "location": "实验室", "description": "互相取暖" },
+      { "chapter": "第9章", "participants": ["周野", "苏浅"], "location": "酒店", "description": "情绪确认" },
+      { "chapter": "第10章", "participants": ["陈默", "林岚"], "location": "海边", "description": "关系稳定" },
+      { "chapter": "第10章", "participants": ["周野", "宋棠"], "location": "车里", "description": "暧昧升级" },
+      { "chapter": "第11章", "participants": ["陈默", "林岚"], "location": "家中", "description": "和解后的温柔" },
+      { "chapter": "第12章", "participants": ["周野", "苏浅"], "location": "公寓", "description": "留白与选择" }
+    ]
+  },
+  "evolution": [
+    { "chapter": "第2章", "stage": "试探", "description": "关系从工作延伸到情绪层面" },
+    { "chapter": "第3章", "stage": "突破", "description": "第一次亲密后开始重新定义边界" },
+    { "chapter": "第7章", "stage": "拉扯", "description": "彼此的需求与现实冲突加剧" },
+    { "chapter": "第10章", "stage": "稳定", "description": "关系趋于稳定，进入更长期的磨合" }
+  ]
+}

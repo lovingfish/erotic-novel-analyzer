@@ -35,6 +35,23 @@ static/
 2. `selectNovel()` → `GET /api/novel/{path}` → loads content
 3. `analyzeNovel()` → `POST /api/analyze` → LLM analysis → `renderAllData()`
 
+### Export Report
+- UI入口：分析完成后点击“导出”
+- 调用链：`templates/index.html` → `doExport()` → `static/chart-view.js` → `exportReport()`
+- 导出HTML：通过CDN加载 DaisyUI/Tailwind/Alpine.js，内联 `static/style.css`（保证离线打开也能保持一致样式）
+- Tab一致性：导出使用与网页版相同的 6 个Tab（总结/主角/关系图/首次/统计/发展）
+- 关系图导出：固定SVG画布 `1200x800`，并锁定主题颜色（dark/light）
+- 文件名：使用 `sanitizeFilename()` 清理后下载
+
+### E2E Tests (Export)
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+python -m pytest -q
+```
+
+Sample export file: `tests/export/test_export_report.html` (generated via `python scripts/generate_export_sample.py`).
+
 ### Frontend Patterns
 - Alpine.js `x-data="app()"` manages all state
 - DOM rendering via `document.createElement()` (no virtual DOM)

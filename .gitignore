@@ -1,5 +1,40 @@
+# Environment
 .env
+.env.local
+
+# Python
 __pycache__/
 venv/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+Thumbs.db
+
+# Project specific
+temp-output/
+nul
+desktop.ini
+opencode.json
+
+# Dev/Test
+tests/export/
+requirements-dev.txt
+scripts/generate_export_sample.py
+
+# Claude specs (optional)
+.claude/specs/

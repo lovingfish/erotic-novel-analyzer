@@ -411,39 +411,12 @@
                     const wordCountText = wordCount > 10000 ? (wordCount / 10000).toFixed(1) + '万' : String(wordCount);
 
                     const quickStats = document.getElementById('quickStats');
-                    quickStats.replaceChildren();
-
-                    const section = document.createElement('div');
-                    section.className = 'novel-meta-section';
-
-                    const grid = document.createElement('div');
-                    grid.className = 'quick-stats-grid';
-
-                    const makeStat = (title, value, valueClass = '') => {
-                        const item = document.createElement('div');
-                        item.className = 'quick-stat';
-
-                        const t = document.createElement('div');
-                        t.className = 'quick-stat-title';
-                        t.textContent = title;
-
-                        const v = document.createElement('div');
-                        v.className = `quick-stat-value ${valueClass}`.trim();
-                        v.textContent = String(value);
-
-                        item.append(t, v);
-                        return item;
-                    };
-
-                    grid.append(
-                        makeStat('亲密次数', sexCount, 'text-primary'),
-                        makeStat('关系对', relationshipCount, 'text-secondary'),
-                        makeStat('角色数', characterCount, ''),
-                        makeStat('字数', wordCountText, '')
-                    );
-
-                    section.appendChild(grid);
-                    quickStats.appendChild(section);
+                    renderQuickStats(quickStats, {
+                        sexCount,
+                        relationshipCount,
+                        characterCount,
+                        wordCountText
+                    });
 
                     renderRelationshipSummary(data);
                     renderCharacters(data);
@@ -508,7 +481,9 @@
                         this.errorMsg = '没有可导出的数据';
                         return;
                     }
-                    exportReport(this.currentAnalysis, this.selectedNovel.name);
+                    exportReport(this.currentAnalysis, this.selectedNovel.name, {
+                        wordCount: this.currentNovelContent ? this.currentNovelContent.length : 0
+                    });
                     this.showToast('报告已导出', 'success');
                 }
             };
