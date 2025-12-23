@@ -60,16 +60,36 @@ DEBUG=false
 
 ## 架构概览
 
-```text
-浏览器(Alpine.js + DaisyUI)
-        |
-        |  /api/*
-        v
-FastAPI (backend.py) ----> OpenAI 兼容 API
-        |
-        v
-本地 .txt 文件（NOVEL_PATH）
+```mermaid
+flowchart TD
+  UI[浏览器<br/>Alpine.js + DaisyUI]
+  API[FastAPI<br/>backend.py]
+  FS[(本地 .txt 文件<br/>NOVEL_PATH)]
+  LLM[OpenAI 兼容 API]
+  Extract[JSON 提取]
+  Repair[本地修复<br/>结构校验 + 交叉对账]
+
+  UI -->|GET /api/novels| API
+  UI -->|GET /api/novel/{path}| API
+  UI -->|POST /api/analyze| API
+
+  API -->|读取| FS
+  FS -->|内容| API
+
+  API -->|一次调用模型<br/>/chat/completions| LLM
+  LLM -->|返回文本| API
+
+  API --> Extract
+  Extract --> Repair
+  Repair -->|analysis JSON| UI
 ```
+
+## 输出健壮性（防“抽风”）
+
+为了尽量保证前端永远能渲染：
+
+- **提示词加固**：强制要求输出纯 JSON、字段齐全，并给出合法 JSON skeleton（避免模型抄到 `true/false/章节数` 这类非 JSON 内容）。
+- **本地修复兜底**（不再二次调用 LLM）：后端会对模型输出做结构清洗，并进行参与者/关系的交叉对账，尽量补齐缺失节点，避免关系图少人或页面解析崩溃。
 
 ## 目录结构
 

@@ -33,13 +33,17 @@ static/
 ### Data Flow
 1. `scanNovels()` → `GET /api/novels` → renders dropdown
 2. `selectNovel()` → `GET /api/novel/{path}` → loads content
-3. `analyzeNovel()` → `POST /api/analyze` → LLM analysis → `renderAllData()`
+3. `analyzeNovel()` → `POST /api/analyze`
+   - single LLM call
+   - JSON extraction
+   - local repair (schema validation + reconciliation)
+   → `renderAllData()`
 
 ### Export Report
 - UI入口：分析完成后点击“导出”
 - 调用链：`templates/index.html` → `doExport()` → `static/chart-view.js` → `exportReport()`
 - 导出HTML：通过CDN加载 DaisyUI/Tailwind/Alpine.js，内联 `static/style.css`（保证离线打开也能保持一致样式）
-- Tab一致性：导出使用与网页版相同的 6 个Tab（总结/主角/关系图/首次/统计/发展）
+- Tab一致性：导出使用与网页版相同的 6 个Tab（总结/角色/关系图/首次/统计/发展）
 - 关系图导出：固定SVG画布 `1200x800`，并锁定主题颜色（dark/light）
 - 文件名：使用 `sanitizeFilename()` 清理后下载
 

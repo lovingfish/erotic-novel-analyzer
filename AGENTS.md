@@ -30,10 +30,14 @@ Keep changes cohesive: backend logic in `backend.py`, UI state/behavior in `temp
 
 ## Testing Guidelines
 
-There is no automated test suite yet. For non-trivial changes, add `pytest` and a `tests/` folder (files named `test_*.py`).
+This repo includes Playwright-based E2E tests for the export report.
 
 Minimum checks before opening a PR:
 - `python -m compileall backend.py`
+- E2E (export):
+  - `pip install -r requirements-dev.txt`
+  - `python -m playwright install chromium`
+  - `python -m pytest -q`
 - Manual smoke test: start the server, select a small `.txt`, run analysis, verify key tabs render.
 
 ## Commit & Pull Request Guidelines
