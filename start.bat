@@ -1,27 +1,37 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo ========================================
-echo Novel Analyzer - Launcher
-echo ========================================
+echo [Novel Analyzer] Starting...
 
-set "PYTHON=%~dp0venv\Scripts\python.exe"
-if not exist "%PYTHON%" set "PYTHON=python"
+set "VENV_DIR=%~dp0venv"
+set "PYTHON=%VENV_DIR%\Scripts\python.exe"
+set "PIP=%VENV_DIR%\Scripts\pip.exe"
 
-echo [1/2] Installing dependencies...
-"%PYTHON%" -m pip install --disable-pip-version-check -r requirements.txt
-if errorlevel 1 (
-  echo Dependency install failed.
-  pause
-  exit /b 1
+if not exist "%VENV_DIR%" (
+  echo [INFO] Creating venv...
+  python -m venv "%VENV_DIR%"
+  if errorlevel 1 (
+    echo [ERROR] Failed to create venv.
+    pause
+    exit /b 1
+  )
 )
 
-echo [2/2] Starting server...
-echo.
-echo Open the Local URL printed by the server.
-echo Press Ctrl+C to stop.
-echo ========================================
+if not exist "%PIP%" (
+  echo [INFO] Installing pip in venv...
+  "%PYTHON%" -m ensurepip --upgrade
+)
+
+"%PYTHON%" -m pip install -q --disable-pip-version-check -r requirements.txt 2>nul
+if errorlevel 1 (
+  echo [INFO] Installing dependencies...
+  "%PYTHON%" -m pip install --disable-pip-version-check -r requirements.txt
+  if errorlevel 1 (
+    echo [ERROR] Dependency install failed.
+    pause
+    exit /b 1
+  )
+)
 
 "%PYTHON%" backend.py
-
 pause
