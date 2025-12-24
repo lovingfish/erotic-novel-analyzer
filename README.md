@@ -1,4 +1,4 @@
-# 色情小说分析器
+# 涩涩小说分析器
 
 基于 LLM 的本地小说分析工具：角色关系、性癖画像、亲密场景与进度可视化。支持任意 OpenAI 兼容 API；所有敏感配置仅保存在服务端 `.env`。
 
@@ -35,15 +35,15 @@ PORT=6103
 DEBUG=false
 ```
 
-| 配置项 | 说明 | 示例 |
-| --- | --- | --- |
-| `NOVEL_PATH` | 小说根目录 | `X:\Gallery\h小说` |
-| `API_BASE_URL` | OpenAI 兼容 API 地址 | `https://api.example.com/v1` |
-| `API_KEY` | API 密钥（仅服务端） | `sk-xxx` |
-| `MODEL_NAME` | 模型名称 | `gpt-4o` |
-| `HOST` | 监听地址（默认仅本机） | `127.0.0.1` |
-| `PORT` | 端口 | `6103` |
-| `DEBUG` | 显示 LLM 原始响应错误 | `false` |
+| 配置项         | 说明                   | 示例                         |
+| -------------- | ---------------------- | ---------------------------- |
+| `NOVEL_PATH`   | 小说根目录             | `X:\Gallery\h小说`           |
+| `API_BASE_URL` | OpenAI 兼容 API 地址   | `https://api.example.com/v1` |
+| `API_KEY`      | API 密钥（仅服务端）   | `sk-xxx`                     |
+| `MODEL_NAME`   | 模型名称               | `gpt-4o`                     |
+| `HOST`         | 监听地址（默认仅本机） | `127.0.0.1`                  |
+| `PORT`         | 端口                   | `6103`                       |
+| `DEBUG`        | 显示 LLM 原始响应错误  | `false`                      |
 
 ## 运行与开发命令
 
