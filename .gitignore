@@ -37,4 +37,5 @@ requirements-dev.txt
 scripts/generate_export_sample.py
 
 # Claude specs (optional)
-.claude/specs/
+.claude/
+.playwright-mcp/
