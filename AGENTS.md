@@ -7,46 +7,190 @@
 ├── backend.py              # FastAPI server: file scanning + LLM calls + /api/*
 ├── templates/index.html    # Single-page UI (Alpine.js) served by FastAPI
 ├── static/                 # CSS + client-side rendering (e.g., chart-view.js)
+│   ├── style.css           # DaisyUI/Tailwind supplements
+│   └── chart-view.js       # Visualization functions (relationship graph, export)
 ├── requirements.txt        # Python runtime dependencies
+├── requirements-dev.txt    # Development dependencies (Playwright, pytest)
 ├── .env.example            # Config template (copy to .env; never commit secrets)
-└── start.bat               # Windows launcher (installs deps, starts server)
+├── start.bat               # Windows launcher (installs deps, starts server)
+└── tests/                  # Test suite
+    ├── test_export_report_e2e.py    # E2E test for export report
+    ├── test_thunderzones_e2e.py     # E2E test for thunderzone detection
+    ├── test_thunderzones.py         # Unit tests for thunderzone logic
+    ├── test_verify_merge.py         # Unit tests for verify/merge logic
+    ├── fixtures/                     # Test fixtures
+    │   ├── analysis_empty.json
+    │   └── analysis_full.json
+    └── export/                       # Sample export output
+        └── test_export_report.html
 ```
 
 Keep changes cohesive: backend logic in `backend.py`, UI state/behavior in `templates/index.html`, reusable JS rendering helpers in `static/`.
 
 ## Build, Test, and Development Commands
 
+### Setup
 - Create venv (optional): `python -m venv venv` then `.\venv\Scripts\activate` (Windows).
 - Install deps: `pip install -r requirements.txt`
+- Install dev deps: `pip install -r requirements-dev.txt`
+
+### Running the Server
 - Run (Windows): `start.bat`
 - Run (manual): `python backend.py`
 - Run with reload (dev): `uvicorn backend:app --reload --host 127.0.0.1 --port 6103`
 
+### Testing
+- Run all unit tests: `python -m pytest -q`
+- Run all E2E tests: `python -m pytest tests/test_*_e2e.py -q`
+- Run specific test file: `python -m pytest tests/test_verify_merge.py -q`
+- Run with verbose output: `python -m pytest -v`
+
+### E2E Test Setup
+```bash
+# Install Playwright
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+```
+
 ## Coding Style & Naming Conventions
 
-- Python: 4-space indentation; keep functions small; validate external inputs (paths, URLs, LLM output); prefer type hints for public helpers and request/response models.
-- Frontend: stay “vanilla” (Alpine.js + DOM APIs). Avoid adding build tooling unless there’s a strong reason.
-- Naming: endpoints live under `/api/*`; Python internal helpers use a leading `_` (e.g., `_safe_novel_path`).
+### Python
+- 4-space indentation
+- Keep functions small and focused
+- Validate external inputs (paths, URLs, LLM output)
+- Prefer type hints for public helpers and request/response models
+- Internal helpers use a leading `_` (e.g., `_safe_novel_path`, `_validate_api_url`)
+
+### Frontend
+- Stay "vanilla" (Alpine.js + DOM APIs)
+- Avoid adding build tooling unless there's a strong reason
+- Follow existing patterns in `templates/index.html` and `static/chart-view.js`
+
+### API Design
+- Endpoints live under `/api/*`
+- Use Pydantic models for request/response validation
+- Return proper HTTP status codes (400 for client errors, 422 for validation errors, 500 for server errors)
 
 ## Testing Guidelines
 
-This repo includes Playwright-based E2E tests for the export report.
+### Test Files
+- `test_verify_merge.py` - Unit tests for `merge_analysis_results()` function
+- `test_thunderzones.py` - Unit tests for thunderzone detection logic
+- `test_export_report_e2e.py` - E2E test for export report functionality
+- `test_thunderzones_e2e.py` - E2E test for thunderzone UI and detection
 
-Minimum checks before opening a PR:
-- `python -m compileall backend.py`
-- E2E (export):
-  - `pip install -r requirements-dev.txt`
-  - `python -m playwright install chromium`
-  - `python -m pytest -q`
-- Manual smoke test: start the server, select a small `.txt`, run analysis, verify key tabs render.
+### Test Requirements
+Before opening a PR, ensure:
+
+1. **Syntax Check**
+   ```bash
+   python -m compileall backend.py
+   ```
+
+2. **Unit Tests**
+   ```bash
+   python -m pytest -q
+   ```
+   All tests must pass.
+
+3. **E2E Tests**
+   ```bash
+   pip install -r requirements-dev.txt
+   python -m playwright install chromium
+   python -m pytest -q
+   ```
+   All E2E tests must pass.
+
+4. **Manual Smoke Test**
+   - Start the server
+   - Select a small `.txt` novel
+   - Run analysis
+   - Verify key tabs render (summary, characters, relationships, thunderzones)
+   - Test export functionality
+   - Test log system
+
+### Test Coverage Goals
+- Core backend logic (merge, verify, validation, reconciliation)
+- Frontend rendering functions (export, visualization)
+- API endpoints
+- E2E workflows
 
 ## Commit & Pull Request Guidelines
 
-- Follow Conventional Commits observed in history: `feat:`, `fix:`, `refactor:`, `docs:` + short summary (Chinese or English).
-- PRs should include: what changed, why, how to verify, and screenshots/GIFs for UI changes.
-- Call out security-impacting edits explicitly (path handling, host binding, file access). Backward compatibility is not required—prefer clarity over preserving old behavior.
+### Commit Messages
+Follow Conventional Commits observed in history:
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `refactor:` - Code refactoring
+- `docs:` - Documentation changes
+- `test:` - Test changes
+- `chore:` - Maintenance tasks
+
+Use short summaries in Chinese or English.
+
+### Pull Requests
+PRs should include:
+- **What changed**: Clear description of the changes
+- **Why**: Motivation or problem being solved
+- **How to verify**: Steps to test the changes
+- **Screenshots/GIFs**: For UI changes
+
+### Security Considerations
+- Call out security-impacting edits explicitly (path handling, host binding, file access)
+- Backward compatibility is not required—prefer clarity over preserving old behavior
+- Never commit `.env` or API keys
 
 ## Security & Configuration Tips
 
-- Keep `HOST=127.0.0.1` unless you intentionally want LAN exposure.
-- Never commit `.env` or API keys; keep novel files local and treat them as sensitive input.
+### Configuration
+- Keep `HOST=127.0.0.1` unless you intentionally want LAN exposure
+- Never commit `.env` or API keys to the repository
+- Keep novel files local and treat them as sensitive input
+- Use `LOG_LEVEL=warning` in production to reduce noise
+
+### Security Headers
+The server includes security middleware:
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `X-Frame-Options: DENY`
+
+### Path Security
+- `_safe_novel_path()` prevents directory traversal attacks
+- Only `.txt` files are allowed to be read
+- All file operations are restricted to `NOVEL_PATH` directory
+
+### LLM Security
+- API keys are only stored on the server (`.env`)
+- Frontend never has access to API keys
+- LLM responses are validated and sanitized before use
+- `DEBUG=false` in production to prevent leaking raw LLM responses
+
+## Development Workflow
+
+1. Create a feature branch from `main`
+2. Make your changes
+3. Run unit tests: `python -m pytest -q`
+4. Run E2E tests: `python -m pytest tests/test_*_e2e.py -q`
+5. Manually smoke test the UI
+6. Commit with conventional commit message
+7. Push and create a PR
+8. Ensure all CI checks pass
+
+## Common Issues
+
+### Import Errors
+- Ensure you're using a virtual environment
+- Run `pip install -r requirements.txt`
+
+### Playwright Issues
+- Run `python -m playwright install chromium`
+- Ensure Chromium browser is installed
+
+### Port Already in Use
+- Change `PORT` in `.env` or
+- Kill the process using port 6103: `netstat -ano | findstr :6103` (Windows)
+
+### API Connection Failures
+- Check `API_BASE_URL`, `API_KEY`, `MODEL_NAME` in `.env`
+- Test connection via `/api/test-connection` endpoint
+- Check firewall/network settings
