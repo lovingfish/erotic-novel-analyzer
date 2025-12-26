@@ -95,14 +95,14 @@ DEBUG=false
 flowchart TD
     UI["浏览器 / Alpine.js + DaisyUI"]
     API["FastAPI / backend.py"]
-    FS[("本地 .txt 文件 / NOVEL_PATH")]
+    FS[(本地 .txt 文件 / NOVEL_PATH)]
     LLM["OpenAI 兼容 API"]
     Extract["JSON 提取"]
     Repair["本地修复 / 结构校验 + 交叉对账"]
     Verify["校验补全 / LLM 审查缺失内容"]
 
     UI -->|GET /api/novels| API
-    UI -->|GET /api/novel/{path}| API
+    UI -->|GET /api/novel/:path| API
     UI -->|POST /api/analyze| API
     UI -->|POST /api/verify| API
 
