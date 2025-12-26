@@ -98,7 +98,7 @@ def server_url(tmp_path_factory) -> str:
 
 
 def _select_first_novel(page) -> None:
-    page.locator("div.dropdown.w-full > div[role='button']").click()
+    page.locator("[data-testid='novel-dropdown']").click()
     page.locator(".file-item").first.wait_for(state="visible", timeout=10_000)
     page.locator(".file-item").first.click()
 
@@ -115,7 +115,7 @@ def _stub_analyze(page, analysis: dict) -> None:
 
 
 def _run_analysis(page) -> None:
-    page.locator("main .empty-state button:has-text('开始分析')").click()
+    page.locator("[data-testid='analyze-button']").click()
     page.locator("#toastContainer div:has-text('分析完成')").wait_for(state="visible", timeout=30_000)
 
 

@@ -4,44 +4,118 @@
  */
 
 function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[ch]));
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[ch])
+  );
 }
 
 function sanitizeFilename(name) {
-    const base = String(name ?? '').replace(/[\\/:*?"<>|]+/g, '_').trim();
-    return base || 'report';
+  const base = String(name ?? "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .trim();
+  return base || "report";
 }
 
-function buildQuickStatsHtml({ sexCount, relationshipCount, characterCount, wordCountText } = {}) {
-    const safeSexCount = escapeHtml(sexCount ?? 0);
-    const safeRelationshipCount = escapeHtml(relationshipCount ?? 0);
-    const safeCharacterCount = escapeHtml(characterCount ?? 0);
-    const safeWordCountText = escapeHtml(wordCountText ?? '0');
+function buildQuickStatsHtml({
+  sexCount,
+  relationshipCount,
+  characterCount,
+  wordCountText,
+  novelInfo,
+} = {}) {
+  const safeSexCount = escapeHtml(sexCount ?? 0);
+  const safeRelationshipCount = escapeHtml(relationshipCount ?? 0);
+  const safeCharacterCount = escapeHtml(characterCount ?? 0);
+  const safeWordCountText = escapeHtml(wordCountText ?? "0");
 
-    return `
-        <div class="novel-meta-section">
-            <div class="quick-stats-grid">
-                <div class="quick-stat">
-                    <div class="quick-stat-title">亲密次数</div>
-                    <div class="quick-stat-value text-primary">${safeSexCount}</div>
+  // Novel info from analysis
+  const chapterCount = escapeHtml(novelInfo?.chapter_count || "未知");
+  const isCompleted = novelInfo?.is_completed;
+  const statusText = isCompleted ? "已完结" : "连载中";
+  const statusClass = isCompleted ? "completed" : "ongoing";
+  const worldSetting = escapeHtml(novelInfo?.world_setting || "");
+  const worldTags = Array.isArray(novelInfo?.world_tags)
+    ? novelInfo.world_tags
+    : [];
+  const completionNote = escapeHtml(novelInfo?.completion_note || "");
+
+  return `
+        <div class="summary-grid-3">
+            <!-- 基本信息 Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <i data-lucide="book-open" class="card-icon"></i>
+                    <span class="card-title">基本信息</span>
                 </div>
-                <div class="quick-stat">
-                    <div class="quick-stat-title">关系对</div>
-                    <div class="quick-stat-value text-secondary">${safeRelationshipCount}</div>
+                <div class="stat-item">
+                    <span class="stat-label">章节数</span>
+                    <span class="stat-value highlight-violet">${chapterCount}</span>
                 </div>
-                <div class="quick-stat">
-                    <div class="quick-stat-title">角色数</div>
-                    <div class="quick-stat-value">${safeCharacterCount}</div>
+                <div class="stat-item">
+                    <span class="stat-label">字数</span>
+                    <span class="stat-value">${safeWordCountText}</span>
                 </div>
-                <div class="quick-stat">
-                    <div class="quick-stat-title">字数</div>
-                    <div class="quick-stat-value">${safeWordCountText}</div>
+                <div class="stat-item">
+                    <span class="stat-label">状态</span>
+                    <span class="status-badge ${statusClass}">${statusText}</span>
+                    ${
+                      completionNote
+                        ? `<span class="info-desc" style="margin-top: 0.5rem; margin-bottom: 0;">${completionNote}</span>`
+                        : ""
+                    }
+                </div>
+            </div>
+            
+            <!-- 世界观设定 Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <i data-lucide="file-text" class="card-icon"></i>
+                    <span class="card-title">世界观设定</span>
+                </div>
+                ${
+                  worldSetting
+                    ? `<p class="info-desc">${worldSetting}</p>`
+                    : '<p class="info-desc" style="opacity: 0.5;">暂无世界观描述</p>'
+                }
+                ${
+                  worldTags.length > 0
+                    ? `
+                <div class="world-tags">
+                    ${worldTags
+                      .map(
+                        (tag) =>
+                          `<span class="world-tag">${escapeHtml(tag)}</span>`
+                      )
+                      .join("")}
+                </div>
+                `
+                    : ""
+                }
+            </div>
+            
+            <!-- 关系统计 Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <i data-lucide="message-square" class="card-icon"></i>
+                    <span class="card-title">关系统计</span>
+                </div>
+                <div class="stat-pair">
+                    <div class="stat-item">
+                        <span class="stat-label">亲密次数</span>
+                        <span class="stat-value highlight-pink">${safeSexCount}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">关系对</span>
+                        <span class="stat-value highlight-violet">${safeRelationshipCount}</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -49,142 +123,195 @@ function buildQuickStatsHtml({ sexCount, relationshipCount, characterCount, word
 }
 
 function renderQuickStats(container, stats) {
-    if (!container) return;
-    container.replaceChildren();
-    container.insertAdjacentHTML('beforeend', buildQuickStatsHtml(stats));
+  if (!container) return;
+  container.replaceChildren();
+  container.insertAdjacentHTML("beforeend", buildQuickStatsHtml(stats));
+  // Re-initialize Lucide icons for dynamically added content
+  if (typeof lucide !== "undefined") {
+    lucide.createIcons();
+  }
 }
 
 function renderThunderzones(container, data) {
-    if (!container) return;
-    const html = buildThunderzonesHtml(data?.analysis);
-    container.innerHTML = html;
+  if (!container) return;
+  const html = buildThunderzonesHtml(data?.analysis);
+  container.innerHTML = html;
 }
 
 // 获取DaisyUI主题颜色
 function getThemeColors() {
-    const style = getComputedStyle(document.documentElement);
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    return {
-        primary: style.getPropertyValue('--p') ? `oklch(${style.getPropertyValue('--p')})` : '#6366f1',
-        secondary: style.getPropertyValue('--s') ? `oklch(${style.getPropertyValue('--s')})` : '#ec4899',
-        info: style.getPropertyValue('--in') ? `oklch(${style.getPropertyValue('--in')})` : '#3b82f6',
-        error: style.getPropertyValue('--er') ? `oklch(${style.getPropertyValue('--er')})` : '#ef4444',
-        bgBase: isDark ? '#1c1c1e' : '#f2f2f7',
-        textPrimary: isDark ? '#ffffff' : '#000000',
-        textSecondary: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)'
-    };
+  const style = getComputedStyle(document.documentElement);
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  return {
+    primary: style.getPropertyValue("--p")
+      ? `oklch(${style.getPropertyValue("--p")})`
+      : "#6366f1",
+    secondary: style.getPropertyValue("--s")
+      ? `oklch(${style.getPropertyValue("--s")})`
+      : "#ec4899",
+    info: style.getPropertyValue("--in")
+      ? `oklch(${style.getPropertyValue("--in")})`
+      : "#3b82f6",
+    error: style.getPropertyValue("--er")
+      ? `oklch(${style.getPropertyValue("--er")})`
+      : "#ef4444",
+    bgBase: isDark ? "#1c1c1e" : "#f2f2f7",
+    textPrimary: isDark ? "#ffffff" : "#000000",
+    textSecondary: isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.6)",
+  };
 }
 
 function getExportThemeColors(isDark) {
-    const dark = Boolean(isDark);
-    return {
-        primary: '#6366f1',
-        secondary: '#ec4899',
-        info: '#3b82f6',
-        error: '#ef4444',
-        bgBase: dark ? '#1c1c1e' : '#f2f2f7',
-        textPrimary: dark ? '#ffffff' : '#000000',
-        textSecondary: dark ? '#ffffffb3' : '#00000099'
-    };
+  const dark = Boolean(isDark);
+  return {
+    primary: "#6366f1",
+    secondary: "#ec4899",
+    info: "#3b82f6",
+    error: "#ef4444",
+    bgBase: dark ? "#1c1c1e" : "#f2f2f7",
+    textPrimary: dark ? "#ffffff" : "#000000",
+    textSecondary: dark ? "#ffffffb3" : "#00000099",
+  };
 }
 
-function buildRelationshipSvgHtml(data, { width = 1200, height = 800, isDark } = {}) {
-    if (!data || (!data.characters && !data.relationships)) {
-        return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
-    }
+function buildRelationshipSvgHtml(
+  data,
+  { width = 1200, height = 800, isDark } = {}
+) {
+  if (!data || (!data.characters && !data.relationships)) {
+    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
+  }
 
-    const allCharacters = Array.isArray(data.characters) ? data.characters : [];
-    const relationships = Array.isArray(data.relationships) ? data.relationships : [];
+  const allCharacters = Array.isArray(data.characters) ? data.characters : [];
+  const relationships = Array.isArray(data.relationships)
+    ? data.relationships
+    : [];
 
-    const charsInRelationships = new Set();
-    relationships.forEach(rel => {
-        if (typeof rel?.from === 'string') charsInRelationships.add(rel.from);
-        if (typeof rel?.to === 'string') charsInRelationships.add(rel.to);
-    });
+  const charsInRelationships = new Set();
+  relationships.forEach((rel) => {
+    if (typeof rel?.from === "string") charsInRelationships.add(rel.from);
+    if (typeof rel?.to === "string") charsInRelationships.add(rel.to);
+  });
 
-    const characters = allCharacters.filter(c => c && typeof c.name === 'string' && charsInRelationships.has(c.name));
+  const characters = allCharacters.filter(
+    (c) => c && typeof c.name === "string" && charsInRelationships.has(c.name)
+  );
 
-    if (characters.length === 0 && relationships.length === 0) {
-        return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
-    }
+  if (characters.length === 0 && relationships.length === 0) {
+    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
+  }
 
-    const displayWidth = Math.max(1, Math.round(Number(width) || 1200));
-    const displayHeight = Math.max(1, Math.round(Number(height) || 800));
-    const colors = getExportThemeColors(Boolean(isDark));
+  const displayWidth = Math.max(1, Math.round(Number(width) || 1200));
+  const displayHeight = Math.max(1, Math.round(Number(height) || 800));
+  const colors = getExportThemeColors(Boolean(isDark));
 
-    const viewBoxWidth = 1200;
-    const viewBoxHeight = 800;
-    const centerX = viewBoxWidth / 2;
-    const centerY = viewBoxHeight / 2;
-    const radius = Math.min(viewBoxWidth, viewBoxHeight) * 0.35;
+  const viewBoxWidth = 1200;
+  const viewBoxHeight = 800;
+  const centerX = viewBoxWidth / 2;
+  const centerY = viewBoxHeight / 2;
+  const radius = Math.min(viewBoxWidth, viewBoxHeight) * 0.35;
 
-    const nodes = characters.map((char, i) => {
-        const angle = (i / Math.max(1, characters.length)) * 2 * Math.PI - Math.PI / 2;
-        const gender = char.gender;
-        const nodeColor = gender === 'male' ? colors.info : (gender === 'female' ? colors.error : colors.primary);
-        return {
-            ...char,
-            x: centerX + Math.cos(angle) * radius,
-            y: centerY + Math.sin(angle) * radius,
-            color: nodeColor
-        };
-    });
+  const nodes = characters.map((char, i) => {
+    const angle =
+      (i / Math.max(1, characters.length)) * 2 * Math.PI - Math.PI / 2;
+    const gender = char.gender;
+    const nodeColor =
+      gender === "male"
+        ? colors.info
+        : gender === "female"
+        ? colors.error
+        : colors.primary;
+    return {
+      ...char,
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+      color: nodeColor,
+    };
+  });
 
-    const nodeByName = new Map(nodes.map(node => [node.name, node]));
+  const nodeByName = new Map(nodes.map((node) => [node.name, node]));
 
-    const edgesHtml = relationships.map((rel, relIndex) => {
-        const source = typeof rel?.from === 'string' ? nodeByName.get(rel.from) : null;
-        const target = typeof rel?.to === 'string' ? nodeByName.get(rel.to) : null;
-        if (!source || !target) return '';
+  const edgesHtml = relationships
+    .map((rel, relIndex) => {
+      const source =
+        typeof rel?.from === "string" ? nodeByName.get(rel.from) : null;
+      const target =
+        typeof rel?.to === "string" ? nodeByName.get(rel.to) : null;
+      if (!source || !target) return "";
 
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
 
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const perpX = -dy / len;
-        const perpY = dx / len;
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const perpX = -dy / len;
+      const perpY = dx / len;
 
-        const offsetAmount = (relIndex % 3 - 1) * 18;
-        const labelX = midX + perpX * offsetAmount;
-        const labelY = midY + perpY * offsetAmount;
+      const offsetAmount = ((relIndex % 3) - 1) * 18;
+      const labelX = midX + perpX * offsetAmount;
+      const labelY = midY + perpY * offsetAmount;
 
-        const labelText = String(rel?.type ?? '');
-        const labelCharLen = Math.max(4, Array.from(labelText).length);
-        const textLen = labelCharLen * 8;
-        const rectX = labelX - textLen / 2 - 6;
-        const rectY = labelY - 10;
+      const labelText = String(rel?.type ?? "");
+      const labelCharLen = Math.max(4, Array.from(labelText).length);
+      const textLen = labelCharLen * 8;
+      const rectX = labelX - textLen / 2 - 6;
+      const rectY = labelY - 10;
 
-        return `
-            <line x1="${source.x}" y1="${source.y}" x2="${target.x}" y2="${target.y}" stroke="${colors.primary}" stroke-width="2" stroke-opacity="0.6"></line>
-            <rect x="${rectX}" y="${rectY}" width="${textLen + 12}" height="16" fill="${colors.bgBase}" rx="4"></rect>
-            <text x="${labelX}" y="${labelY + 3}" text-anchor="middle" fill="${colors.textSecondary}" font-size="10">${escapeHtml(labelText)}</text>
+      return `
+            <line x1="${source.x}" y1="${source.y}" x2="${target.x}" y2="${
+        target.y
+      }" stroke="${
+        colors.primary
+      }" stroke-width="2" stroke-opacity="0.6"></line>
+            <rect x="${rectX}" y="${rectY}" width="${
+        textLen + 12
+      }" height="16" fill="${colors.bgBase}" rx="4"></rect>
+            <text x="${labelX}" y="${labelY + 3}" text-anchor="middle" fill="${
+        colors.textSecondary
+      }" font-size="10">${escapeHtml(labelText)}</text>
         `;
-    }).join('');
+    })
+    .join("");
 
-    const nodesHtml = nodes.map(node => {
-        const genderIcon = node.gender === 'male' ? 'M' : 'F';
-        const titleText = [
-            node.name,
-            node.identity || '未知',
-            node.personality || '未知',
-            '',
-            `性癖: ${node.sexual_preferences || '未知'}`
-        ].join('\n');
+  const nodesHtml = nodes
+    .map((node) => {
+      const genderIcon = node.gender === "male" ? "M" : "F";
+      const titleText = [
+        node.name,
+        node.identity || "未知",
+        node.personality || "未知",
+        "",
+        `性癖: ${node.sexual_preferences || "未知"}`,
+      ].join("\n");
 
-        return `
+      return `
             <g>
-                <circle cx="${node.x}" cy="${node.y}" r="45" fill="${node.color}" fill-opacity="0.2"></circle>
-                <circle cx="${node.x}" cy="${node.y}" r="35" fill="${node.color}" stroke="${colors.textPrimary}" stroke-width="2" stroke-opacity="0.3"></circle>
-                <text x="${node.x}" y="${node.y + 5}" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="600">${escapeHtml(genderIcon)}</text>
-                <text x="${node.x}" y="${node.y + 55}" text-anchor="middle" fill="${colors.textPrimary}" font-size="12">${escapeHtml(node.name)}</text>
+                <circle cx="${node.x}" cy="${node.y}" r="45" fill="${
+        node.color
+      }" fill-opacity="0.2"></circle>
+                <circle cx="${node.x}" cy="${node.y}" r="35" fill="${
+        node.color
+      }" stroke="${
+        colors.textPrimary
+      }" stroke-width="2" stroke-opacity="0.3"></circle>
+                <text x="${node.x}" y="${
+        node.y + 5
+      }" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="600">${escapeHtml(
+        genderIcon
+      )}</text>
+                <text x="${node.x}" y="${
+        node.y + 55
+      }" text-anchor="middle" fill="${
+        colors.textPrimary
+      }" font-size="12">${escapeHtml(node.name)}</text>
                 <title>${escapeHtml(titleText)}</title>
             </g>
         `;
-    }).join('');
+    })
+    .join("");
 
-    return `
+  return `
         <svg xmlns="http://www.w3.org/2000/svg" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 1200 800">
             <rect x="0" y="0" width="1200" height="800" fill="${colors.bgBase}"></rect>
             ${edgesHtml}
@@ -194,467 +321,607 @@ function buildRelationshipSvgHtml(data, { width = 1200, height = 800, isDark } =
 }
 
 function renderRelationshipGraph(containerId, data) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
-    container.innerHTML = '';
+  container.innerHTML = "";
 
-    if (!data || (!data.characters && !data.relationships)) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
-        return;
-    }
+  if (!data || (!data.characters && !data.relationships)) {
+    container.innerHTML =
+      '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
+    return;
+  }
 
-    const allCharacters = data.characters || [];
-    const relationships = data.relationships || [];
+  const allCharacters = data.characters || [];
+  const relationships = data.relationships || [];
 
-    // 只显示在关系中出现的角色
-    const charsInRelationships = new Set();
-    relationships.forEach(rel => {
-        charsInRelationships.add(rel.from);
-        charsInRelationships.add(rel.to);
-    });
+  // 只显示在关系中出现的角色
+  const charsInRelationships = new Set();
+  relationships.forEach((rel) => {
+    charsInRelationships.add(rel.from);
+    charsInRelationships.add(rel.to);
+  });
 
-    // 过滤出有关系的角色
-    const characters = allCharacters.filter(c => charsInRelationships.has(c.name));
+  // 过滤出有关系的角色
+  const characters = allCharacters.filter((c) =>
+    charsInRelationships.has(c.name)
+  );
 
-    if (characters.length === 0 && relationships.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
-        return;
-    }
+  if (characters.length === 0 && relationships.length === 0) {
+    container.innerHTML =
+      '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
+    return;
+  }
 
-    const colors = getThemeColors();
-    const width = container.clientWidth || 600;
-    const height = container.clientHeight || 400;
-    const centerX = width / 2;
-    const centerY = height / 2;
+  const colors = getThemeColors();
+  const width = container.clientWidth || 600;
+  const height = container.clientHeight || 400;
+  const centerX = width / 2;
+  const centerY = height / 2;
 
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.style.background = 'transparent';
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.background = "transparent";
 
-    // 计算节点位置 - 圆形分布
-    const nodes = characters.map((char, i) => {
-        const angle = (i / characters.length) * 2 * Math.PI - Math.PI / 2;
-        const radius = Math.min(width, height) * 0.35;
-        return {
-            ...char,
-            x: centerX + Math.cos(angle) * radius,
-            y: centerY + Math.sin(angle) * radius,
-            color: char.gender === 'male' ? colors.info : colors.error
-        };
-    });
+  // 计算节点位置 - 圆形分布
+  const nodes = characters.map((char, i) => {
+    const angle = (i / characters.length) * 2 * Math.PI - Math.PI / 2;
+    const radius = Math.min(width, height) * 0.35;
+    return {
+      ...char,
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+      color: char.gender === "male" ? colors.info : colors.error,
+    };
+  });
 
-    // 绘制关系连线
-    relationships.forEach((rel, relIndex) => {
-        const source = nodes.find(n => n.name === rel.from);
-        const target = nodes.find(n => n.name === rel.to);
-        if (!source || !target) return;
+  // 绘制关系连线
+  relationships.forEach((rel, relIndex) => {
+    const source = nodes.find((n) => n.name === rel.from);
+    const target = nodes.find((n) => n.name === rel.to);
+    if (!source || !target) return;
 
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', source.x);
-        line.setAttribute('y1', source.y);
-        line.setAttribute('x2', target.x);
-        line.setAttribute('y2', target.y);
-        line.setAttribute('stroke', colors.primary);
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('stroke-opacity', '0.8');
-        svg.appendChild(line);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", source.x);
+    line.setAttribute("y1", source.y);
+    line.setAttribute("x2", target.x);
+    line.setAttribute("y2", target.y);
+    line.setAttribute("stroke", colors.primary);
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-opacity", "0.8");
+    svg.appendChild(line);
 
-        // 关系标签 - 沿线条方向偏移避免堆叠
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
+    // 关系标签 - 沿线条方向偏移避免堆叠
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y + target.y) / 2;
 
-        // 计算垂直偏移方向
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const perpX = -dy / len;  // 垂直方向
-        const perpY = dx / len;
+    // 计算垂直偏移方向
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const perpX = -dy / len; // 垂直方向
+    const perpY = dx / len;
 
-        // 根据索引偏移标签位置
-        const offsetAmount = (relIndex % 3 - 1) * 18;  // -18, 0, 18
-        const labelX = midX + perpX * offsetAmount;
-        const labelY = midY + perpY * offsetAmount;
+    // 根据索引偏移标签位置
+    const offsetAmount = ((relIndex % 3) - 1) * 18; // -18, 0, 18
+    const labelX = midX + perpX * offsetAmount;
+    const labelY = midY + perpY * offsetAmount;
 
-        // 标签背景
-        const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        const textLen = (rel.type?.length || 4) * 8;
-        bgRect.setAttribute('x', labelX - textLen / 2 - 4);
-        bgRect.setAttribute('y', labelY - 10);
-        bgRect.setAttribute('width', textLen + 8);
-        bgRect.setAttribute('height', '16');
-        bgRect.setAttribute('fill', colors.bgBase);
-        bgRect.setAttribute('rx', '4');
-        svg.appendChild(bgRect);
+    // 标签背景
+    const bgRect = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "rect"
+    );
+    const textLen = (rel.type?.length || 4) * 8;
+    bgRect.setAttribute("x", labelX - textLen / 2 - 4);
+    bgRect.setAttribute("y", labelY - 10);
+    bgRect.setAttribute("width", textLen + 8);
+    bgRect.setAttribute("height", "16");
+    bgRect.setAttribute("fill", colors.bgBase);
+    bgRect.setAttribute("rx", "4");
+    svg.appendChild(bgRect);
 
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', labelX);
-        text.setAttribute('y', labelY + 3);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('fill', colors.textSecondary);
-        text.setAttribute('font-size', '11');
-        text.textContent = rel.type;
-        svg.appendChild(text);
-    });
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", labelX);
+    text.setAttribute("y", labelY + 3);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", colors.textSecondary);
+    text.setAttribute("font-size", "11");
+    text.textContent = rel.type;
+    svg.appendChild(text);
+  });
 
-    // 绘制角色节点
-    nodes.forEach(node => {
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        g.style.cursor = 'pointer';
+  // 绘制角色节点
+  nodes.forEach((node) => {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.style.cursor = "pointer";
 
-        // 外圈光晕
-        const outer = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        outer.setAttribute('cx', node.x);
-        outer.setAttribute('cy', node.y);
-        outer.setAttribute('r', '45');
-        outer.setAttribute('fill', node.color);
-        outer.setAttribute('fill-opacity', '0.25');
-        g.appendChild(outer);
+    // 外圈光晕
+    const outer = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle"
+    );
+    outer.setAttribute("cx", node.x);
+    outer.setAttribute("cy", node.y);
+    outer.setAttribute("r", "45");
+    outer.setAttribute("fill", node.color);
+    outer.setAttribute("fill-opacity", "0.25");
+    g.appendChild(outer);
 
-        // 节点圆
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', node.x);
-        circle.setAttribute('cy', node.y);
-        circle.setAttribute('r', '35');
-        circle.setAttribute('fill', node.color);
-        circle.setAttribute('stroke', colors.textPrimary);
-        circle.setAttribute('stroke-width', '2');
-        circle.setAttribute('stroke-opacity', '0.5');
-        g.appendChild(circle);
+    // 节点圆
+    const circle = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle"
+    );
+    circle.setAttribute("cx", node.x);
+    circle.setAttribute("cy", node.y);
+    circle.setAttribute("r", "35");
+    circle.setAttribute("fill", node.color);
+    circle.setAttribute("stroke", colors.textPrimary);
+    circle.setAttribute("stroke-width", "2");
+    circle.setAttribute("stroke-opacity", "0.5");
+    g.appendChild(circle);
 
-        // 性别标签
-        const genderIcon = node.gender === 'male' ? 'M' : 'F';
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', node.x);
-        text.setAttribute('y', node.y + 5);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('fill', '#ffffff');
-        text.setAttribute('font-size', '16');
-        text.setAttribute('font-weight', '600');
-        text.textContent = genderIcon;
-        g.appendChild(text);
+    // 性别标签
+    const genderIcon = node.gender === "male" ? "M" : "F";
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", node.x);
+    text.setAttribute("y", node.y + 5);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#ffffff");
+    text.setAttribute("font-size", "16");
+    text.setAttribute("font-weight", "600");
+    text.textContent = genderIcon;
+    g.appendChild(text);
 
-        // 角色名
-        const name = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        name.setAttribute('x', node.x);
-        name.setAttribute('y', node.y + 55);
-        name.setAttribute('text-anchor', 'middle');
-        name.setAttribute('fill', colors.textPrimary);
-        name.setAttribute('font-size', '13');
-        name.textContent = node.name;
-        g.appendChild(name);
+    // 角色名
+    const name = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    name.setAttribute("x", node.x);
+    name.setAttribute("y", node.y + 55);
+    name.setAttribute("text-anchor", "middle");
+    name.setAttribute("fill", colors.textPrimary);
+    name.setAttribute("font-size", "13");
+    name.textContent = node.name;
+    g.appendChild(name);
 
-        // 悬停提示
-        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        title.textContent = `${node.name}\n${node.identity}\n${node.personality}\n\n性癖: ${node.sexual_preferences || '未知'}`;
-        g.appendChild(title);
+    // 悬停提示
+    const title = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "title"
+    );
+    title.textContent = `${node.name}\n${node.identity}\n${
+      node.personality
+    }\n\n性癖: ${node.sexual_preferences || "未知"}`;
+    g.appendChild(title);
 
-        svg.appendChild(g);
-    });
+    svg.appendChild(g);
+  });
 
-    container.appendChild(svg);
+  container.appendChild(svg);
 }
 
 function buildCharactersHtml(data) {
-    if (!data || !data.characters || data.characters.length === 0) {
-        return '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">暂无角色数据</div></div>';
-    }
+  if (!data || !data.characters || data.characters.length === 0) {
+    return '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">暂无角色数据</div></div>';
+  }
 
-    const males = data.characters.filter(c => c.gender === 'male');
-    let females = data.characters.filter(c => c.gender === 'female');
-    
-    // 按淫荡指数排序女性角色（有分数的排前面，无分数的排后面）
-    females = females.sort((a, b) => {
-        const scoreA = a.lewdness_score ?? -1;
-        const scoreB = b.lewdness_score ?? -1;
-        return scoreB - scoreA;
-    });
-    // 添加排名（只给有分数的排名）
-    let rank = 1;
-    females = females.map((char) => ({
-        ...char,
-        lewdness_rank: char.lewdness_score ? rank++ : null
-    }));
+  const males = data.characters.filter((c) => c.gender === "male");
+  let females = data.characters.filter((c) => c.gender === "female");
 
-    return `
+  // 按淫荡指数排序女性角色（有分数的排前面，无分数的排后面）
+  females = females.sort((a, b) => {
+    const scoreA = a.lewdness_score ?? -1;
+    const scoreB = b.lewdness_score ?? -1;
+    return scoreB - scoreA;
+  });
+  // 添加排名（只给有分数的排名）
+  let rank = 1;
+  females = females.map((char) => ({
+    ...char,
+    lewdness_rank: char.lewdness_score ? rank++ : null,
+  }));
+
+  return `
         <div class="multi-char-section">
             <h3>男性角色 (${males.length})</h3>
             <div class="char-grid">
-                ${males.map(char => buildCharCardHtml(char, 'male')).join('')}
+                ${males.map((char) => buildCharCardHtml(char, "male")).join("")}
             </div>
         </div>
         <div class="multi-char-section">
             <h3>女性角色 (${females.length}) - 淫荡指数排行</h3>
             <div class="char-grid">
-                ${females.map(char => buildCharCardHtml(char, 'female')).join('')}
+                ${females
+                  .map((char) => buildCharCardHtml(char, "female"))
+                  .join("")}
             </div>
         </div>
     `;
 }
 
 function renderCharacters(data) {
-    const container = document.getElementById('mainCharacters');
-    if (!container) return;
-    container.innerHTML = buildCharactersHtml(data);
+  const container = document.getElementById("mainCharacters");
+  if (!container) return;
+  container.innerHTML = buildCharactersHtml(data);
 }
 
 function buildCharCardHtml(char, type) {
-    if (!char) return '';
-    const hasLewdness = type === 'female' && char.lewdness_score;
-    const lewdnessColor = hasLewdness ? getLewdnessColor(char.lewdness_score) : '#4b5563';
-    const isFemale = type === 'female';
-    
-    return `
+  if (!char) return "";
+  const hasLewdness = type === "female" && char.lewdness_score;
+  const lewdnessColor = hasLewdness
+    ? getLewdnessColor(char.lewdness_score)
+    : "#4b5563";
+  const isFemale = type === "female";
+
+  return `
         <div class="char-card ${type}">
             <div class="char-header">
-                <div class="char-avatar ${type}">${type === 'male' ? 'M' : 'F'}</div>
+                <div class="char-avatar ${type}">${
+    type === "male" ? "M" : "F"
+  }</div>
                 <div class="char-info">
                     <div class="char-name">${escapeHtml(char.name)}</div>
-                    <div class="char-role">${type === 'male' ? '男性' : '女性'}</div>
+                    <div class="char-role">${
+                      type === "male" ? "男性" : "女性"
+                    }</div>
                 </div>
-                ${isFemale ? `
+                ${
+                  isFemale
+                    ? `
                 <div class="lewdness-badge" style="background: ${lewdnessColor}">
-                    <span class="lewdness-rank">${hasLewdness ? '#' + (char.lewdness_rank || '?') : '-'}</span>
-                    <span class="lewdness-score">${hasLewdness ? char.lewdness_score : '?'}</span>
+                    <span class="lewdness-rank">${
+                      hasLewdness ? "#" + (char.lewdness_rank || "?") : "-"
+                    }</span>
+                    <span class="lewdness-score">${
+                      hasLewdness ? char.lewdness_score : "?"
+                    }</span>
                 </div>
-                ` : ''}
+                `
+                    : ""
+                }
             </div>
             <div class="char-details">
                 <div class="char-detail">
                     <span class="detail-label">身份</span>
-                    <span class="detail-value">${escapeHtml(char.identity || '未知')}</span>
+                    <span class="detail-value">${escapeHtml(
+                      char.identity || "未知"
+                    )}</span>
                 </div>
                 <div class="char-detail">
                     <span class="detail-label">性格</span>
-                    <span class="detail-value">${escapeHtml(char.personality || '未知')}</span>
+                    <span class="detail-value">${escapeHtml(
+                      char.personality || "未知"
+                    )}</span>
                 </div>
                 <div class="char-detail sexual">
                     <span class="detail-label">性癖爱好</span>
-                    <span class="detail-value">${escapeHtml(char.sexual_preferences || '未知')}</span>
+                    <span class="detail-value">${escapeHtml(
+                      char.sexual_preferences || "未知"
+                    )}</span>
                 </div>
-                ${hasLewdness && char.lewdness_analysis ? `
+                ${
+                  hasLewdness && char.lewdness_analysis
+                    ? `
                 <div class="char-detail lewdness">
                     <span class="detail-label">淫荡指数分析</span>
-                    <span class="detail-value lewdness-text">${escapeHtml(char.lewdness_analysis)}</span>
+                    <span class="detail-value lewdness-text">${escapeHtml(
+                      char.lewdness_analysis
+                    )}</span>
                 </div>
-                ` : ''}
+                `
+                    : ""
+                }
             </div>
         </div>
     `;
 }
 
 function renderCharCard(char, type) {
-    return buildCharCardHtml(char, type);
+  return buildCharCardHtml(char, type);
 }
 
 function getLewdnessColor(score) {
-    if (score >= 90) return '#ef4444';  // 红色 - 极度淫荡
-    if (score >= 70) return '#f97316';  // 橙色 - 非常淫荡
-    if (score >= 50) return '#eab308';  // 黄色 - 中等
-    if (score >= 30) return '#22c55e';  // 绿色 - 较低
-    return '#6366f1';  // 蓝色 - 纯洁
+  if (score >= 90) return "#ef4444"; // 红色 - 极度淫荡
+  if (score >= 70) return "#f97316"; // 橙色 - 非常淫荡
+  if (score >= 50) return "#eab308"; // 黄色 - 中等
+  if (score >= 30) return "#22c55e"; // 绿色 - 较低
+  return "#6366f1"; // 蓝色 - 纯洁
 }
 
 function buildFirstSexSceneHtml(data) {
-    if (!data || !data.first_sex_scenes || data.first_sex_scenes.length === 0) {
-        return '<div class="empty-state"><div class="empty-icon">💕</div><div class="empty-text">暂无首次亲密数据</div></div>';
-    }
+  if (!data || !data.first_sex_scenes || data.first_sex_scenes.length === 0) {
+    return '<div class="empty-state"><div class="empty-icon">💕</div><div class="empty-text">暂无首次亲密数据</div></div>';
+  }
 
-    return data.first_sex_scenes.map(scene => `
+  return data.first_sex_scenes
+    .map(
+      (scene) => `
         <div class="sex-scene-card">
             <div class="scene-header">
                 <span class="scene-badge">首次</span>
-                <span class="scene-participants">${(scene.participants || []).map(p => escapeHtml(p)).join(' + ') || '?'}</span>
+                <span class="scene-participants">${
+                  (scene.participants || [])
+                    .map((p) => escapeHtml(p))
+                    .join(" + ") || "?"
+                }</span>
             </div>
             <div class="scene-chapter">${escapeHtml(scene.chapter)}</div>
             <div class="scene-location">${escapeHtml(scene.location)}</div>
-            <div class="scene-description">${escapeHtml(scene.description)}</div>
+            <div class="scene-description">${escapeHtml(
+              scene.description
+            )}</div>
         </div>
-    `).join('');
+    `
+    )
+    .join("");
 }
 
 function renderFirstSexScene(data) {
-    const container = document.getElementById('firstSexScene');
-    if (!container) return;
+  const container = document.getElementById("firstSexScene");
+  if (!container) return;
 
-    container.innerHTML = buildFirstSexSceneHtml(data);
+  container.innerHTML = buildFirstSexSceneHtml(data);
 }
 
 function buildSexSceneCountHtml(data) {
-    if (!data || !data.sex_scenes) {
-        return '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">暂无统计数据</div></div>';
-    }
+  if (!data || !data.sex_scenes) {
+    return '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">暂无统计数据</div></div>';
+  }
 
-    const scenes = data.sex_scenes;
-    return `
+  const scenes = data.sex_scenes;
+  return `
         <div class="count-display">
             <div class="count-number">${scenes.total_count || 0}</div>
             <div class="count-label">次亲密接触</div>
         </div>
         <div class="scenes-timeline">
-            ${(scenes.scenes || []).slice(0, 15).map((scene, i) => `
+            ${(scenes.scenes || [])
+              .slice(0, 15)
+              .map(
+                (scene, i) => `
                 <div class="scene-item">
                     <div class="scene-number">${i + 1}</div>
                     <div class="scene-info">
-                        <div class="scene-participants-small">${(scene.participants || []).map(p => escapeHtml(p)).join(', ') || '?'}</div>
-                        <div class="scene-chapter-small">${escapeHtml(scene.chapter)}</div>
-                        <div class="scene-location-small">${escapeHtml(scene.location)}</div>
+                        <div class="scene-participants-small">${
+                          (scene.participants || [])
+                            .map((p) => escapeHtml(p))
+                            .join(", ") || "?"
+                        }</div>
+                        <div class="scene-chapter-small">${escapeHtml(
+                          scene.chapter
+                        )}</div>
+                        <div class="scene-location-small">${escapeHtml(
+                          scene.location
+                        )}</div>
                     </div>
                 </div>
-            `).join('')}
-            ${(scenes.scenes?.length || 0) > 15 ? `<div class="more-scenes">还有 ${scenes.scenes.length - 15} 次...</div>` : ''}
+            `
+              )
+              .join("")}
+            ${
+              (scenes.scenes?.length || 0) > 15
+                ? `<div class="more-scenes">还有 ${
+                    scenes.scenes.length - 15
+                  } 次...</div>`
+                : ""
+            }
         </div>
     `;
 }
 
 function renderSexSceneCount(data) {
-    const container = document.getElementById('sexSceneCount');
-    if (!container) return;
+  const container = document.getElementById("sexSceneCount");
+  if (!container) return;
 
-    container.innerHTML = buildSexSceneCountHtml(data);
+  container.innerHTML = buildSexSceneCountHtml(data);
 }
 
 function buildRelationshipProgressHtml(data) {
-    if (!data || !data.evolution || data.evolution.length === 0) {
-        return '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">暂无发展数据</div></div>';
-    }
+  if (!data || !data.evolution || data.evolution.length === 0) {
+    return '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">暂无发展数据</div></div>';
+  }
 
-    return `
+  return `
         <div class="progress-timeline">
-            ${data.evolution.map((p, i) => `
+            ${data.evolution
+              .map(
+                (p, i) => `
                 <div class="progress-item">
-                    <div class="progress-dot ${i === 0 ? 'first' : ''}"></div>
+                    <div class="progress-dot ${i === 0 ? "first" : ""}"></div>
                     <div class="progress-content">
-                        <div class="progress-chapter">${escapeHtml(p.chapter)}</div>
+                        <div class="progress-chapter">${escapeHtml(
+                          p.chapter
+                        )}</div>
                         <div class="progress-stage">${escapeHtml(p.stage)}</div>
-                        <div class="progress-desc">${escapeHtml(p.description)}</div>
+                        <div class="progress-desc">${escapeHtml(
+                          p.description
+                        )}</div>
                     </div>
                 </div>
-            `).join('')}
+            `
+              )
+              .join("")}
         </div>
     `;
 }
 
 function renderRelationshipProgress(data) {
-    const container = document.getElementById('relationshipProgress');
-    if (!container) return;
+  const container = document.getElementById("relationshipProgress");
+  if (!container) return;
 
-    container.innerHTML = buildRelationshipProgressHtml(data);
+  container.innerHTML = buildRelationshipProgressHtml(data);
 }
 
 function buildRelationshipSummaryHtml(data) {
-    if (!data) {
-        return '<div class="empty-state"><div class="empty-icon">📖</div><div class="empty-text">暂无数据</div></div>';
-    }
+  if (!data) {
+    return '<div class="empty-state"><div class="empty-icon">📖</div><div class="empty-text">暂无数据</div></div>';
+  }
 
-    const chars = data.characters || [];
-    const males = chars.filter(c => c.gender === 'male');
-    const females = chars.filter(c => c.gender === 'female');
-    const novelInfo = data.novel_info || {};
+  const chars = data.characters || [];
+  const males = chars.filter((c) => c.gender === "male");
+  const females = chars.filter((c) => c.gender === "female");
+  const totalChars = chars.length;
 
-    return `
-        ${novelInfo.world_setting ? `
-        <div class="novel-meta-section">
-            <div class="summary-title">小说信息</div>
-            <div class="novel-meta-grid">
-                <div class="novel-meta-item">
-                    <span class="meta-label">世界观</span>
-                    <span class="meta-value">${escapeHtml(novelInfo.world_setting)}</span>
-                </div>
-                <div class="novel-meta-item">
-                    <span class="meta-label">章节数</span>
-                    <span class="meta-value">${escapeHtml(novelInfo.chapter_count || '未知')}</span>
-                </div>
-                <div class="novel-meta-item">
-                    <span class="meta-label">状态</span>
-                    <span class="meta-value ${novelInfo.is_completed ? 'completed' : 'ongoing'}">${novelInfo.is_completed ? '已完结' : '连载中'}${novelInfo.completion_note ? ' - ' + escapeHtml(novelInfo.completion_note) : ''}</span>
-                </div>
-            </div>
-        </div>
-        ` : ''}
-        
+  return `
         <div class="char-names-section">
-            <div class="summary-title">角色一览</div>
+            <div class="card-header">
+                <i data-lucide="users" class="card-icon"></i>
+                <span class="card-title">角色一览</span>
+                <span class="text-sm opacity-50" style="margin-left: 0.5rem;">${totalChars}人</span>
+            </div>
             <div class="char-names-grid">
                 <div class="char-names-group male">
                     <div class="char-group-label">男性角色 (${males.length})</div>
                     <div class="char-names-list">
-                        ${males.map(c => `<span class="char-name-tag male">${escapeHtml(c.name)}</span>`).join('')}
+                        ${males
+                          .map(
+                            (c) =>
+                              `<span class="char-name-tag male">${escapeHtml(
+                                c.name
+                              )}</span>`
+                          )
+                          .join("")}
                     </div>
                 </div>
                 <div class="char-names-group female">
                     <div class="char-group-label">女性角色 (${females.length})</div>
                     <div class="char-names-list">
-                        ${females.map(c => `<span class="char-name-tag female">${escapeHtml(c.name)}</span>`).join('')}
+                        ${females
+                          .map(
+                            (c) =>
+                              `<span class="char-name-tag female">${escapeHtml(
+                                c.name
+                              )}</span>`
+                          )
+                          .join("")}
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="summary-section">
-            <div class="summary-title">剧情总结</div>
-            <div class="summary-content">${escapeHtml(data.summary || '暂无总结')}</div>
+            <div class="card-header">
+                <i data-lucide="scroll-text" class="card-icon"></i>
+                <span class="card-title">剧情总结</span>
+            </div>
+            <div class="summary-content">${escapeHtml(
+              data.summary || "暂无总结"
+            )}</div>
         </div>
     `;
 }
 
-function buildThunderzonesHtml(analysisData) {
-    const thunderzones = Array.isArray(analysisData?.thunderzones) ? analysisData.thunderzones : [];
+function buildRelationshipDetailsHtml(data) {
+  const relationships = Array.isArray(data?.relationships)
+    ? data.relationships
+    : [];
 
-    if (thunderzones.length === 0) {
-        return `
+  if (relationships.length === 0) {
+    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系详情</div></div>';
+  }
+
+  const itemsHtml = relationships
+    .map((rel) => {
+      const from = escapeHtml(rel?.from || "未知");
+      const to = escapeHtml(rel?.to || "未知");
+      const type = escapeHtml(rel?.type || "关系");
+      const startWay = escapeHtml(rel?.start_way || "");
+      const description = escapeHtml(rel?.description || "");
+
+      return `
+        <div class="bg-base-200 border border-base-300 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-medium">${from}</span>
+            <span class="opacity-50">×</span>
+            <span class="font-medium">${to}</span>
+            <span class="badge badge-ghost ml-auto">${type}</span>
+          </div>
+          ${
+            startWay
+              ? `<div class="text-xs opacity-60">开始方式：${startWay}</div>`
+              : ""
+          }
+          ${
+            description
+              ? `<div class="text-sm opacity-80 mt-2">${description}</div>`
+              : ""
+          }
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="summary-section">
+      <div class="summary-title">关系详情</div>
+      <div class="space-y-3">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
+}
+
+function buildThunderzonesHtml(analysisData) {
+  const thunderzones = Array.isArray(analysisData?.thunderzones)
+    ? analysisData.thunderzones
+    : [];
+
+  if (thunderzones.length === 0) {
+    return `
             <div class="empty-state">
                 <div class="empty-icon">✅</div>
                 <div class="empty-text">未检测到雷点</div>
             </div>
         `;
-    }
+  }
 
-    const normalizeSeverity = (value) => {
-        const raw = String(value ?? '').trim();
-        const lower = raw.toLowerCase();
-        if (raw === '高' || lower === 'high') return '高';
-        if (raw === '中' || lower === 'medium') return '中';
-        if (raw === '低' || lower === 'low') return '低';
-        return raw || '低';
-    };
+  const normalizeSeverity = (value) => {
+    const raw = String(value ?? "").trim();
+    const lower = raw.toLowerCase();
+    if (raw === "高" || lower === "high") return "高";
+    if (raw === "中" || lower === "medium") return "中";
+    if (raw === "低" || lower === "low") return "低";
+    return raw || "低";
+  };
 
-    const severityWeight = (value) => {
-        const severity = normalizeSeverity(value);
-        if (severity === '高') return 0;
-        if (severity === '中') return 1;
-        if (severity === '低') return 2;
-        return 99;
-    };
+  const severityWeight = (value) => {
+    const severity = normalizeSeverity(value);
+    if (severity === "高") return 0;
+    if (severity === "中") return 1;
+    if (severity === "低") return 2;
+    return 99;
+  };
 
-    const normalizeTypeKey = (value) => {
-        const raw = String(value ?? '').trim();
-        if (!raw) return '其他';
-        const head = raw.split('/')[0].split('(')[0].trim();
-        return head || raw;
-    };
+  const normalizeTypeKey = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "其他";
+    const head = raw.split("/")[0].split("(")[0].trim();
+    return head || raw;
+  };
 
-    const sorted = [...thunderzones].sort((a, b) => severityWeight(a?.severity) - severityWeight(b?.severity));
+  const sorted = [...thunderzones].sort(
+    (a, b) => severityWeight(a?.severity) - severityWeight(b?.severity)
+  );
 
-    const typeIcons = {
-        '绿帽': '🟢',
-        'NTR': '🔴',
-        '女性舔狗': '🟡',
-        '恶堕': '🟣',
-        '其他': '⚪',
-    };
+  const typeIcons = {
+    绿帽: "🟢",
+    NTR: "🔴",
+    女性舔狗: "🟡",
+    恶堕: "🟣",
+    其他: "⚪",
+  };
 
-    const severityColors = {
-        '高': 'badge-error',
-        '中': 'badge-warning',
-        '低': 'badge-info',
-    };
+  const severityColors = {
+    高: "badge-error",
+    中: "badge-warning",
+    低: "badge-info",
+  };
 
-    const summary = escapeHtml(analysisData?.thunderzone_summary || '检测到雷点');
+  const summary = escapeHtml(analysisData?.thunderzone_summary || "检测到雷点");
 
-    let html = `
+  let html = `
         <div class="summary-section">
             <div class="summary-title">雷点概览</div>
             <p class="summary-content">${summary}</p>
@@ -663,24 +930,28 @@ function buildThunderzonesHtml(analysisData) {
         <div class="thunderzone-list">
     `;
 
-    for (const thunderzone of sorted) {
-        const typeRaw = thunderzone?.type;
-        const typeKey = normalizeTypeKey(typeRaw);
-        const severityNormalized = normalizeSeverity(thunderzone?.severity);
+  for (const thunderzone of sorted) {
+    const typeRaw = thunderzone?.type;
+    const typeKey = normalizeTypeKey(typeRaw);
+    const severityNormalized = normalizeSeverity(thunderzone?.severity);
 
-        const type = escapeHtml(typeRaw || typeKey || '未知');
-        const severity = escapeHtml(severityNormalized || '低');
-        const description = escapeHtml(thunderzone?.description || '');
-        const characters = Array.isArray(thunderzone?.involved_characters) ? thunderzone.involved_characters : [];
-        const charactersText = characters.map((c) => escapeHtml(c)).join(', ');
-        const location = escapeHtml(thunderzone?.chapter_location || '');
-        const context = thunderzone?.relationship_context ? escapeHtml(thunderzone.relationship_context) : '';
+    const type = escapeHtml(typeRaw || typeKey || "未知");
+    const severity = escapeHtml(severityNormalized || "低");
+    const description = escapeHtml(thunderzone?.description || "");
+    const characters = Array.isArray(thunderzone?.involved_characters)
+      ? thunderzone.involved_characters
+      : [];
+    const charactersText = characters.map((c) => escapeHtml(c)).join(", ");
+    const location = escapeHtml(thunderzone?.chapter_location || "");
+    const context = thunderzone?.relationship_context
+      ? escapeHtml(thunderzone.relationship_context)
+      : "";
 
-        const icon = typeIcons[typeKey] || '⚪';
-        const badgeClass = severityColors[severityNormalized] || 'badge-ghost';
-        const cardClass = severityNormalized === '高' ? 'thunderzone-high' : '';
+    const icon = typeIcons[typeKey] || "⚪";
+    const badgeClass = severityColors[severityNormalized] || "badge-ghost";
+    const cardClass = severityNormalized === "高" ? "thunderzone-high" : "";
 
-        html += `
+    html += `
             <div class="thunderzone-card ${cardClass}">
                 <div class="thunderzone-header">
                     <span class="thunderzone-icon">${icon}</span>
@@ -690,44 +961,72 @@ function buildThunderzonesHtml(analysisData) {
                 <div class="thunderzone-body">
                     <p class="thunderzone-desc">${description}</p>
                     <div class="thunderzone-meta">
-                        <span class="meta-item">👥 ${charactersText || '未指定'}</span>
-                        <span class="meta-item">📍 ${location || '未知位置'}</span>
+                        <span class="meta-item">👥 ${
+                          charactersText || "未指定"
+                        }</span>
+                        <span class="meta-item">📍 ${
+                          location || "未知位置"
+                        }</span>
                     </div>
-                    ${context ? `<p class="thunderzone-context">🔗 关系背景: ${context}</p>` : ''}
+                    ${
+                      context
+                        ? `<p class="thunderzone-context">🔗 关系背景: ${context}</p>`
+                        : ""
+                    }
                 </div>
             </div>
         `;
-    }
+  }
 
-    html += `</div>`;
-    return html;
+  html += `</div>`;
+  return html;
 }
 
 function renderRelationshipSummary(data) {
-    const container = document.getElementById('relationshipSummary');
-    if (!container) return;
+  const container = document.getElementById("relationshipSummary");
+  if (!container) return;
 
-    container.innerHTML = buildRelationshipSummaryHtml(data);
+  container.innerHTML = buildRelationshipSummaryHtml(data);
+  // Re-initialize Lucide icons for dynamically added content
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+}
+
+function renderRelationshipDetails(data) {
+  const container = document.getElementById("relationshipDetails");
+  if (!container) return;
+
+  container.innerHTML = buildRelationshipDetailsHtml(data);
 }
 
 function exportReport(analysis, novelName, opts = {}) {
-    const safeNovelName = escapeHtml(novelName);
-    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-    const generatedAt = escapeHtml(opts?.generatedAt || new Date().toLocaleString());
+  const safeNovelName = escapeHtml(novelName);
+  const theme = document.documentElement.getAttribute("data-theme") || "dark";
+  const generatedAt = escapeHtml(
+    opts?.generatedAt || new Date().toLocaleString()
+  );
 
-    const toInt = (value, fallback = 0) => {
-        const n = Number(value);
-        return Number.isFinite(n) ? Math.trunc(n) : fallback;
-    };
+  const toInt = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.trunc(n) : fallback;
+  };
 
-    const wordCount = toInt(opts?.wordCount, 0);
-    const wordCountText = wordCount > 10000 ? (wordCount / 10000).toFixed(1) + '万' : String(wordCount);
+  const wordCount = toInt(opts?.wordCount, 0);
+  const wordCountText =
+    wordCount > 10000
+      ? (wordCount / 10000).toFixed(1) + "万"
+      : String(wordCount);
 
-    const sexCount = toInt(analysis?.sex_scenes?.total_count, 0);
-    const relationshipCount = Array.isArray(analysis?.relationships) ? analysis.relationships.length : 0;
-    const characterCount = Array.isArray(analysis?.characters) ? analysis.characters.length : 0;
-    
-    const styleCss = `
+  const sexCount = toInt(analysis?.sex_scenes?.total_count, 0);
+  const relationshipCount = Array.isArray(analysis?.relationships)
+    ? analysis.relationships.length
+    : 0;
+  const characterCount = Array.isArray(analysis?.characters)
+    ? analysis.characters.length
+    : 0;
+
+  const styleCss = `
 :root { --radius: 0.75rem; --border-color: oklch(var(--bc) / 0.1); }
 [x-cloak] { display: none !important; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -833,17 +1132,28 @@ function exportReport(analysis, novelName, opts = {}) {
 	}
     `;
 
-    const quickStatsHtml = buildQuickStatsHtml({ sexCount, relationshipCount, characterCount, wordCountText });
+  const quickStatsHtml = buildQuickStatsHtml({
+    sexCount,
+    relationshipCount,
+    characterCount,
+    wordCountText,
+    novelInfo: analysis?.novel_info,
+  });
 
-    const summaryHtml = buildRelationshipSummaryHtml(analysis);
-    const charactersHtml = buildCharactersHtml(analysis);
-    const relationshipSvgHtml = buildRelationshipSvgHtml(analysis, { width: 1200, height: 800, isDark: theme === 'dark' });
-    const firstSexSceneHtml = buildFirstSexSceneHtml(analysis);
-    const sexSceneCountHtml = buildSexSceneCountHtml(analysis);
-    const relationshipProgressHtml = buildRelationshipProgressHtml(analysis);
-    const thunderzonesHtml = buildThunderzonesHtml(analysis);
+  const summaryHtml = buildRelationshipSummaryHtml(analysis);
+  const charactersHtml = buildCharactersHtml(analysis);
+  const relationshipSvgHtml = buildRelationshipSvgHtml(analysis, {
+    width: 1200,
+    height: 800,
+    isDark: theme === "dark",
+  });
+  const relationshipDetailsHtml = buildRelationshipDetailsHtml(analysis);
+  const firstSexSceneHtml = buildFirstSexSceneHtml(analysis);
+  const sexSceneCountHtml = buildSexSceneCountHtml(analysis);
+  const relationshipProgressHtml = buildRelationshipProgressHtml(analysis);
+  const thunderzonesHtml = buildThunderzonesHtml(analysis);
 
-    const html = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="${theme}">
 <head>
     <meta charset="UTF-8">
@@ -852,6 +1162,7 @@ function exportReport(analysis, novelName, opts = {}) {
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         ${styleCss}
         .export-report #relationshipChart { height: 600px; overflow: hidden; position: relative; }
@@ -904,6 +1215,7 @@ function exportReport(analysis, novelName, opts = {}) {
                 </div>
                 <div x-show="currentTab === 'relationships'" x-cloak>
                     <div class="bg-base-200 border border-base-300 rounded-lg h-[600px]" id="relationshipChart">${relationshipSvgHtml}</div>
+                    <div class="mt-6" id="relationshipDetails">${relationshipDetailsHtml}</div>
                 </div>
                 <div x-show="currentTab === 'firstsex'" x-cloak>
                     <div id="firstSexScene">${firstSexSceneHtml}</div>
@@ -917,16 +1229,21 @@ function exportReport(analysis, novelName, opts = {}) {
             </div>
         </div>
     </main>
+    <script>
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    </script>
 </body>
 </html>`;
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = sanitizeFilename(novelName).replace(/\.txt$/i, '') + '_分析报告.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = sanitizeFilename(novelName).replace(/\.txt$/i, "") + "_分析报告.html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

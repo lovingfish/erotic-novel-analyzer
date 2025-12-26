@@ -36,10 +36,9 @@ static/
 | --------------- | ------ | ----------- |
 | `/api/config`   | GET    | Server config (API URL, model name) |
 | `/api/novels`   | GET    | Scan novel directory (recursive `.txt` scan) |
-| `/api/novel/{path}` | GET | Read novel content (truncated at 80k chars) |
+| `/api/novel/{path}` | GET | Read novel content |
 | `/api/test-connection` | GET | Test LLM API connection |
 | `/api/analyze`  | POST   | Analyze novel (single LLM call + local repair) |
-| `/api/verify`   | POST   | Verify and complete analysis (second LLM call + merge) |
 
 ### Data Flow
 
@@ -52,10 +51,6 @@ static/
    - reconciliation (`_reconcile_entities`)
    - second validation pass
    → `renderAllData()`
-4. Optional: `verifyAnalysis()` → `POST /api/verify`
-   - second LLM call to review for missing content
-   - merge results via `merge_analysis_results`
-   - final validation and reconciliation
 
 ### Key Features
 
@@ -120,6 +115,7 @@ static/
 {
   "novel_info": {
     "world_setting": "string",
+    "world_tags": ["string"],
     "chapter_count": 0,
     "is_completed": false,
     "completion_note": "string"
@@ -185,24 +181,6 @@ static/
 }
 ```
 
-#### Verify Response
-```json
-{
-  "missing_characters": [...],
-  "missing_relationships": [...],
-  "missing_first_sex_scenes": [...],
-  "missing_sex_scenes": [...],
-  "missing_evolution": [...],
-  "missing_thunderzones": [...],
-  "corrections": "string",
-  "merged_analysis": {...},
-  "error": "string|null",
-  "validation_errors": ["string"],
-  "added_characters": 0,
-  "added_relationships": 0
-}
-```
-
 ## Configuration
 
 All config in `.env` (copy from `.env.example`):
@@ -219,8 +197,6 @@ All config in `.env` (copy from `.env.example`):
 python -m pytest tests/ -q
 ```
 
-Test files:
-- `test_verify_merge.py` - Tests for merge_analysis_results function
 
 ### E2E Tests (Export)
 ```bash
@@ -233,7 +209,6 @@ python -m pytest tests/test_thunderzones_e2e.py -q
 Sample export file: `tests/export/test_export_report.html` (generated via `python scripts/generate_export_sample.py`).
 
 ### Test Coverage
-- Verify/merge logic
 - Export report generation
 - Thunderzone detection
 - UI interaction (E2E)

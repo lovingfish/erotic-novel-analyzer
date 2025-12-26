@@ -17,7 +17,6 @@
     ├── test_export_report_e2e.py    # E2E test for export report
     ├── test_thunderzones_e2e.py     # E2E test for thunderzone detection
     ├── test_thunderzones.py         # Unit tests for thunderzone logic
-    ├── test_verify_merge.py         # Unit tests for verify/merge logic
     ├── fixtures/                     # Test fixtures
     │   ├── analysis_empty.json
     │   └── analysis_full.json
@@ -42,7 +41,7 @@ Keep changes cohesive: backend logic in `backend.py`, UI state/behavior in `temp
 ### Testing
 - Run all unit tests: `python -m pytest -q`
 - Run all E2E tests: `python -m pytest tests/test_*_e2e.py -q`
-- Run specific test file: `python -m pytest tests/test_verify_merge.py -q`
+- Run specific test file: `python -m pytest tests/test_thunderzones.py -q`
 - Run with verbose output: `python -m pytest -v`
 
 ### E2E Test Setup
@@ -74,7 +73,6 @@ python -m playwright install chromium
 ## Testing Guidelines
 
 ### Test Files
-- `test_verify_merge.py` - Unit tests for `merge_analysis_results()` function
 - `test_thunderzones.py` - Unit tests for thunderzone detection logic
 - `test_export_report_e2e.py` - E2E test for export report functionality
 - `test_thunderzones_e2e.py` - E2E test for thunderzone UI and detection
@@ -110,7 +108,7 @@ Before opening a PR, ensure:
    - Test log system
 
 ### Test Coverage Goals
-- Core backend logic (merge, verify, validation, reconciliation)
+- Core backend logic (validation, reconciliation)
 - Frontend rendering functions (export, visualization)
 - API endpoints
 - E2E workflows

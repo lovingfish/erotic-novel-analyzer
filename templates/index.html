@@ -13,7 +13,8 @@
       defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"
     ></script>
-    <link rel="stylesheet" href="/static/style.css?v=12" />
+    <link rel="stylesheet" href="/static/style.css?v=13" />
+    <script src="https://unpkg.com/lucide@latest"></script>
   </head>
   <body class="min-h-screen bg-base-100 antialiased">
     <!-- 顶栏 - 极简 -->
@@ -95,6 +96,7 @@
               <div
                 tabindex="0"
                 role="button"
+                data-testid="novel-dropdown"
                 class="float-input flex items-center gap-3 cursor-pointer"
               >
                 <span
@@ -128,7 +130,8 @@
             </div>
             <div class="flex items-center gap-2">
               <button
-                class="px-4 py-2 rounded-full bg-primary text-primary-content text-sm font-medium transition-all hover:opacity-90"
+                class="px-4 py-2 rounded-full bg-[#7c3aed] text-white text-sm font-medium transition-all hover:bg-[#6d28d9] flex items-center gap-2"
+                data-testid="analyze-button"
                 @click="analyzeNovel()"
                 :disabled="!selectedNovel || loading"
               >
@@ -136,15 +139,17 @@
                   class="loading loading-spinner loading-xs"
                   x-show="loading"
                 ></span>
+                <i data-lucide="refresh-cw" class="w-4 h-4" x-show="!loading && analysisComplete"></i>
                 <span
                   x-text="loading ? '分析中' : (analysisComplete ? '重新分析' : '开始分析')"
                 ></span>
               </button>
               <button
-                class="px-4 py-2 rounded-full text-sm font-medium transition-colors hover:bg-[var(--glass)] disabled:opacity-40 disabled:cursor-not-allowed"
+                class="px-4 py-2 rounded-full text-sm font-medium transition-colors hover:bg-[var(--glass)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
                 @click="doExport()"
                 :disabled="!analysisComplete || loading"
               >
+                <i data-lucide="download" class="w-4 h-4"></i>
                 导出
               </button>
             </div>
@@ -192,6 +197,7 @@
             <!-- 关系图 -->
             <div x-show="currentTab === 'relationships'" x-cloak>
               <div class="h-[600px]" id="relationshipChart"></div>
+              <div class="mt-6" id="relationshipDetails"></div>
             </div>
             <!-- 首次 -->
             <div x-show="currentTab === 'firstsex'" x-cloak>
@@ -372,7 +378,6 @@
           currentAnalysis: null,
           loading: false,
           analysisComplete: false,
-          everAnalyzed: true,
           errorMsg: "",
           novelTitle: "选择一本小说",
           fileStats: "加载中...",
@@ -413,6 +418,10 @@
             this.scanNovels();
             this.restoreAnalysis();
             this.log("info", "应用初始化完成");
+            // Initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+              lucide.createIcons();
+            }
           },
 
           async loadServerConfig() {
@@ -542,11 +551,7 @@
                 item.dataset.name = String(file.name ?? "");
                 item.textContent = String(file.name ?? "");
                 item.addEventListener("click", () => {
-                  this.selectNovel(
-                    item.dataset.path,
-                    item.dataset.name,
-                    item
-                  );
+                  this.selectNovel(item.dataset.path, item.dataset.name, item);
                   document.activeElement?.blur();
                 });
                 folderDiv.appendChild(item);
@@ -566,7 +571,6 @@
             this.novelTitle = name;
             this.analysisComplete = false;
             this.currentAnalysis = null;
-            window.currentAnalysis = null;
             localStorage.removeItem("novel_analyzer_data");
             this.clearRenderedResults();
             this.currentTab = "summary";
@@ -607,14 +611,9 @@
 
               this.log("success", "分析完成");
               this.currentAnalysis = data.analysis;
-              window.currentAnalysis = data.analysis;
               this.saveAnalysisToStorage(data.analysis);
               this.renderAllData(data.analysis);
               this.analysisComplete = true;
-              this.everAnalyzed = true;
-              try {
-                localStorage.setItem("novel_analyzer_ever_analyzed", "1");
-              } catch (e) {}
               this.currentTab = "summary";
               this.showToast("分析完成", "success");
             } catch (e) {
@@ -656,6 +655,7 @@
               relationshipCount,
               characterCount,
               wordCountText,
+              novelInfo: data.novel_info,
             });
 
             renderRelationshipSummary(data);
@@ -663,6 +663,7 @@
             renderFirstSexScene(data);
             renderSexSceneCount(data);
             renderRelationshipProgress(data);
+            renderRelationshipDetails(data);
             renderThunderzones(document.getElementById("thunderzoneSection"), {
               analysis: data,
             });
@@ -692,19 +693,14 @@
               const saved = localStorage.getItem("novel_analyzer_data");
               if (!saved) return;
               const data = JSON.parse(saved);
-              if (data.analysis && data.novel) {
-                this.currentAnalysis = data.analysis;
-                window.currentAnalysis = data.analysis;
-                this.selectedNovel = data.novel;
-                this.novelTitle = data.novel.name;
-                this.analysisComplete = true;
-                this.everAnalyzed = true;
-                try {
-                  localStorage.setItem("novel_analyzer_ever_analyzed", "1");
-                } catch (e) {}
-                this.renderAllData(data.analysis);
-                this.showToast("已恢复上次分析结果", "info");
-                this.log("info", "已恢复上次分析结果");
+                if (data.analysis && data.novel) {
+                  this.currentAnalysis = data.analysis;
+                  this.selectedNovel = data.novel;
+                  this.novelTitle = data.novel.name;
+                  this.analysisComplete = true;
+                  this.renderAllData(data.analysis);
+                  this.showToast("已恢复上次分析结果", "info");
+                  this.log("info", "已恢复上次分析结果");
               }
             } catch (e) {
               this.log("error", "恢复失败", e.message);
@@ -714,14 +710,11 @@
           clearAnalysis() {
             localStorage.removeItem("novel_analyzer_data");
             this.currentAnalysis = null;
-            window.currentAnalysis = null;
             this.selectedNovel = null;
             this.novelTitle = "选择一本小说";
             this.analysisComplete = false;
-            this.everAnalyzed = false;
             this.currentNovelContent = null;
             this.currentTab = "summary";
-            localStorage.removeItem("novel_analyzer_ever_analyzed");
             document
               .querySelectorAll(".file-item")
               .forEach((el) => el.classList.remove("bg-primary/20"));
@@ -740,6 +733,7 @@
               "firstSexScene",
               "sexSceneCount",
               "relationshipProgress",
+              "relationshipDetails",
             ].forEach((id) => {
               const el = document.getElementById(id);
               if (el) el.replaceChildren();
