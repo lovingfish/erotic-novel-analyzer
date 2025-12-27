@@ -209,6 +209,79 @@
   box-shadow: var(--card-shadow);
 }
 
+/* 进度列表 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.progress-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+}
+.progress-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(var(--b3));
+  color: var(--text-secondary);
+}
+.progress-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.progress-icon.spin svg {
+  animation: spin 1s linear infinite;
+}
+.progress-content {
+  flex: 1;
+  min-width: 0;
+}
+.progress-name {
+  font-weight: 600;
+}
+.progress-detail {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  margin-top: 0.15rem;
+}
+.progress-status {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+.status-running .progress-icon {
+  background: oklch(var(--p) / 0.15);
+  color: oklch(var(--p));
+}
+.status-done .progress-icon {
+  background: oklch(var(--su) / 0.15);
+  color: oklch(var(--su));
+}
+.status-error .progress-icon {
+  background: oklch(var(--er) / 0.15);
+  color: oklch(var(--er));
+}
+.status-pending .progress-icon {
+  background: oklch(var(--wa) / 0.15);
+  color: oklch(var(--wa));
+}
+
 /* 悬浮输入框 */
 .float-input {
   background: var(--glass);

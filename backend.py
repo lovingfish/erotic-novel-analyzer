@@ -7,7 +7,6 @@
 import os
 import json
 import re
-import copy
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -37,9 +36,23 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_NOVEL_PATH = Path(os.getenv("NOVEL_PATH", str(BASE_DIR.parent))).resolve()
 
 
-class AnalyzeRequest(BaseModel):
+class AnalyzeContentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     content: str
+
+
+class AnalyzeScenesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+    characters: list[Dict[str, Any]]
+    relationships: list[Dict[str, Any]]
+
+
+class AnalyzeThunderzonesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+    characters: list[Dict[str, Any]]
+    relationships: list[Dict[str, Any]]
 
 
 def _get_llm_config() -> tuple[str, str, str]:
@@ -178,51 +191,25 @@ def call_llm_with_response(
     raise LLMCallError(last_error or "调用失败", last_raw_response)
 
 
-def _ensure_analysis_defaults(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Guarantee required keys exist with sensible empty defaults to keep UI stable."""
-    if not isinstance(analysis, dict):
-        analysis = {}
+def _call_llm_json(api_url: str, api_key: str, model: str, prompt: str, section: str) -> Dict[str, Any]:
+    raw_response = ""
+    try:
+        content, raw_response = call_llm_with_response(
+            api_url, api_key, model, prompt, temperature=0.7
+        )
+    except LLMCallError as e:
+        detail = f"{section} 调用失败: {e}"
+        if e.raw_response and DEBUG:
+            detail += f"\n\n原始响应:\n{e.raw_response[:2000]}"
+        raise HTTPException(status_code=422, detail=detail)
 
-    analysis.setdefault("novel_info", {})
-    if not isinstance(analysis["novel_info"], dict):
-        analysis["novel_info"] = {}
-    analysis["novel_info"].setdefault("world_tags", [])
-    if not isinstance(analysis["novel_info"]["world_tags"], list):
-        analysis["novel_info"]["world_tags"] = []
-
-    analysis.setdefault("characters", [])
-    if not isinstance(analysis["characters"], list):
-        analysis["characters"] = []
-
-    analysis.setdefault("relationships", [])
-    if not isinstance(analysis["relationships"], list):
-        analysis["relationships"] = []
-
-    analysis.setdefault("first_sex_scenes", [])
-    if not isinstance(analysis["first_sex_scenes"], list):
-        analysis["first_sex_scenes"] = []
-
-    sex_scenes = analysis.get("sex_scenes")
-    if not isinstance(sex_scenes, dict):
-        sex_scenes = {}
-    sex_scenes.setdefault("total_count", 0)
-    sex_scenes.setdefault("scenes", [])
-    if not isinstance(sex_scenes["scenes"], list):
-        sex_scenes["scenes"] = []
-    analysis["sex_scenes"] = sex_scenes
-
-    analysis.setdefault("evolution", [])
-    if not isinstance(analysis["evolution"], list):
-        analysis["evolution"] = []
-
-    analysis.setdefault("thunderzones", [])
-    if not isinstance(analysis["thunderzones"], list):
-        analysis["thunderzones"] = []
-
-    analysis.setdefault("thunderzone_summary", "")
-    analysis.setdefault("summary", analysis.get("summary") or "")
-
-    return analysis
+    data = extract_json_from_response(content)
+    if not data:
+        detail = f"{section} 解析失败: 返回非JSON或字段缺失"
+        if DEBUG and raw_response:
+            detail += f"\n\n原始响应:\n{raw_response[:2000]}"
+        raise HTTPException(status_code=422, detail=detail)
+    return data
 
 
 def _normalize_gender(value: str | None) -> str:
@@ -230,8 +217,8 @@ def _normalize_gender(value: str | None) -> str:
     if not raw:
         return "unknown"
 
-    male_values = {"male", "man", "m", "男", "男性", "男生", "男子", "男主"}
-    female_values = {"female", "woman", "f", "女", "女性", "女生", "女子", "女主"}
+    male_values = {"male", "man", "m", "男", "男性", "男生", "男子", "男主", "男的", "男性角色"}
+    female_values = {"female", "woman", "f", "女", "女性", "女生", "女子", "女主", "女的", "女性角色"}
 
     if raw in male_values:
         return "male"
@@ -246,233 +233,293 @@ def _normalize_gender(value: str | None) -> str:
     return "unknown"
 
 
-def _validate_and_fix_analysis(analysis: Dict[str, Any]) -> tuple[Dict[str, Any], list[str]]:
-    """
-    Light schema validation/repair to keep frontend parsable.
-    Returns (cleaned_analysis, errors).
-    """
+def _normalize_severity(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    lower = raw.lower()
+    if raw in {"高", "中", "低"}:
+        return raw
+    if lower in {"high", "h"}:
+        return "高"
+    if lower in {"medium", "mid", "m"}:
+        return "中"
+    if lower in {"low", "l"}:
+        return "低"
+    return ""
+
+
+def _stringify(value: Any) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def _validate_characters(characters: Any) -> tuple[list[Dict[str, Any]], list[str]]:
     errors: list[str] = []
-    data = _ensure_analysis_defaults(copy.deepcopy(analysis or {}))
+    cleaned: list[Dict[str, Any]] = []
 
-    # characters
-    chars_in = data.get("characters")
-    fixed_chars = []
-    if isinstance(chars_in, list):
-        for idx, c in enumerate(chars_in):
-            if not isinstance(c, dict):
-                errors.append(f"characters[{idx}] not object -> dropped")
-                continue
-            name = str(c.get("name") or "").strip()
-            if not name:
-                errors.append(f"characters[{idx}] missing name -> dropped")
-                continue
-            c["gender"] = _normalize_gender(c.get("gender"))
-            fixed_chars.append(c)
-    else:
-        errors.append("characters not list -> reset")
-    data["characters"] = fixed_chars
+    if not isinstance(characters, list):
+        return [], ["characters 不是数组"]
 
-    # relationships
-    rels_in = data.get("relationships")
-    fixed_rels = []
-    if isinstance(rels_in, list):
-        for idx, r in enumerate(rels_in):
-            if not isinstance(r, dict):
-                errors.append(f"relationships[{idx}] not object -> dropped")
-                continue
-            frm = str(r.get("from") or "").strip()
-            to = str(r.get("to") or "").strip()
-            if not frm or not to:
-                errors.append(f"relationships[{idx}] missing from/to -> dropped")
-                continue
-            fixed_rels.append(r)
-    else:
-        errors.append("relationships not list -> reset")
-    data["relationships"] = fixed_rels
-
-    # first_sex_scenes
-    fss_in = data.get("first_sex_scenes")
-    fixed_fss = []
-    if isinstance(fss_in, list):
-        for idx, s in enumerate(fss_in):
-            if not isinstance(s, dict):
-                errors.append(f"first_sex_scenes[{idx}] not object -> dropped")
-                continue
-            participants = s.get("participants")
-            if not isinstance(participants, list) or not participants:
-                errors.append(f"first_sex_scenes[{idx}] missing participants -> dropped")
-                continue
-            s["participants"] = [str(p).strip() for p in participants if str(p).strip()]
-            fixed_fss.append(s)
-    else:
-        errors.append("first_sex_scenes not list -> reset")
-    data["first_sex_scenes"] = fixed_fss
-
-    # sex_scenes
-    sex = data.get("sex_scenes") or {}
-    if not isinstance(sex, dict):
-        sex = {}
-        errors.append("sex_scenes not object -> reset")
-    scenes_in = sex.get("scenes")
-    fixed_scenes = []
-    if isinstance(scenes_in, list):
-        for idx, s in enumerate(scenes_in):
-            if not isinstance(s, dict):
-                errors.append(f"sex_scenes.scenes[{idx}] not object -> dropped")
-                continue
-            participants = s.get("participants")
-            if not isinstance(participants, list) or not participants:
-                errors.append(f"sex_scenes.scenes[{idx}] missing participants -> dropped")
-                continue
-            s["participants"] = [str(p).strip() for p in participants if str(p).strip()]
-            fixed_scenes.append(s)
-    else:
-        errors.append("sex_scenes.scenes not list -> reset")
-    sex["scenes"] = fixed_scenes
-    try:
-        sex["total_count"] = max(int(sex.get("total_count") or 0), len(fixed_scenes))
-    except Exception:
-        sex["total_count"] = len(fixed_scenes)
-        errors.append("sex_scenes.total_count invalid -> recalculated")
-    data["sex_scenes"] = sex
-
-    # evolution
-    evo_in = data.get("evolution")
-    if not isinstance(evo_in, list):
-        data["evolution"] = []
-        errors.append("evolution not list -> reset")
-
-    # thunderzones
-    th_in = data.get("thunderzones")
-    fixed_th = []
-    if isinstance(th_in, list):
-        for idx, t in enumerate(th_in):
-            if not isinstance(t, dict):
-                errors.append(f"thunderzones[{idx}] not object -> dropped")
-                continue
-            if not t.get("type") and not t.get("description"):
-                errors.append(f"thunderzones[{idx}] missing type/description -> dropped")
-                continue
-            fixed_th.append(t)
-    else:
-        errors.append("thunderzones not list -> reset")
-    data["thunderzones"] = fixed_th
-
-    # summary / thunderzone_summary
-    for key in ("summary", "thunderzone_summary"):
-        val = data.get(key)
-        if not isinstance(val, str):
-            data[key] = "" if val is None else str(val)
-            errors.append(f"{key} not string -> coerced")
-
-    # novel_info
-    if not isinstance(data.get("novel_info"), dict):
-        data["novel_info"] = {}
-        errors.append("novel_info not object -> reset")
-    else:
-        novel_info = data["novel_info"]
-        if not isinstance(novel_info.get("world_tags"), list):
-            novel_info["world_tags"] = []
-            errors.append("novel_info.world_tags not list -> reset")
-
-    return data, errors
-
-
-def _reconcile_entities(analysis: Dict[str, Any]) -> tuple[Dict[str, Any], list[str]]:
-    """
-    Cross-check participants vs characters/relationships; auto-add missing pieces.
-    Returns (analysis, errors)
-    """
-    errors: list[str] = []
-    data = copy.deepcopy(analysis or {})
-
-    characters = data.get("characters") or []
-    relationships = data.get("relationships") or []
-    first_scenes = data.get("first_sex_scenes") or []
-    sex = data.get("sex_scenes") or {}
-    sex_scenes = sex.get("scenes") or []
-
-    name_set = {c.get("name") for c in characters if isinstance(c, dict) and c.get("name")}
-
-    def _collect_participants():
-        parts = set()
-        for rel in relationships:
-            if not isinstance(rel, dict):
-                continue
-            frm = str(rel.get("from") or "").strip()
-            to = str(rel.get("to") or "").strip()
-            if frm:
-                parts.add(frm)
-            if to:
-                parts.add(to)
-        for scene in list(first_scenes) + list(sex_scenes):
-            if not isinstance(scene, dict):
-                continue
-            for p in scene.get("participants") or []:
-                p_name = str(p or "").strip()
-                if p_name:
-                    parts.add(p_name)
-        return parts
-
-    participants = _collect_participants()
-
-    # Add missing characters referenced elsewhere
-    for p in sorted(participants):
-        if p not in name_set:
-            characters.append({
-                "name": p,
-                "gender": "unknown",
-                "identity": "",
-                "personality": "",
-                "sexual_preferences": ""
-            })
-            name_set.add(p)
-            errors.append(f"added missing character: {p}")
-
-    # Build relationship keys to avoid duplicates (undirected)
-    rel_keys = set()
-    cleaned_rels = []
-    for rel in relationships:
-        if not isinstance(rel, dict):
+    seen_names: set[str] = set()
+    for idx, c in enumerate(characters):
+        if not isinstance(c, dict):
+            errors.append(f"characters[{idx}] 不是对象")
             continue
-        frm = str(rel.get("from") or "").strip()
-        to = str(rel.get("to") or "").strip()
+        name = _stringify(c.get("name"))
+        if not name:
+            errors.append(f"characters[{idx}] 缺少 name")
+            continue
+        if name in seen_names:
+            errors.append(f"characters[{idx}] 名字重复: {name}")
+        seen_names.add(name)
+
+        raw_gender = c.get("gender")
+        gender = _normalize_gender(raw_gender)
+        if gender == "unknown":
+            errors.append(f"characters[{idx}] 性别不规范: {name}({raw_gender})")
+
+        identity = _stringify(c.get("identity"))
+        personality = _stringify(c.get("personality"))
+        sexual_preferences = _stringify(c.get("sexual_preferences"))
+        if not identity:
+            errors.append(f"characters[{idx}] 缺少 identity: {name}")
+        if not personality:
+            errors.append(f"characters[{idx}] 缺少 personality: {name}")
+        if not sexual_preferences:
+            errors.append(f"characters[{idx}] 缺少 sexual_preferences: {name}")
+
+        cleaned_char = {
+            "name": name,
+            "gender": gender,
+            "identity": identity,
+            "personality": personality,
+            "sexual_preferences": sexual_preferences,
+        }
+
+        if gender == "female":
+            lewdness_score = c.get("lewdness_score")
+            lewdness_analysis = _stringify(c.get("lewdness_analysis"))
+            if lewdness_score is None or lewdness_analysis == "":
+                errors.append(f"characters[{idx}] 女性角色缺少淫荡指数: {name}")
+            try:
+                cleaned_char["lewdness_score"] = int(lewdness_score)
+            except Exception:
+                errors.append(f"characters[{idx}] 淫荡指数非整数: {name}")
+                cleaned_char["lewdness_score"] = lewdness_score
+            cleaned_char["lewdness_analysis"] = lewdness_analysis
+
+        cleaned.append(cleaned_char)
+
+    return cleaned, errors
+
+
+def _validate_relationships(relationships: Any, character_names: set[str]) -> tuple[list[Dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    cleaned: list[Dict[str, Any]] = []
+
+    if not isinstance(relationships, list):
+        return [], ["relationships 不是数组"]
+
+    for idx, r in enumerate(relationships):
+        if not isinstance(r, dict):
+            errors.append(f"relationships[{idx}] 不是对象")
+            continue
+        frm = _stringify(r.get("from"))
+        to = _stringify(r.get("to"))
         if not frm or not to:
-            continue
-        key = tuple(sorted([frm, to]))
-        if key in rel_keys:
-            continue
-        rel_keys.add(key)
-        cleaned_rels.append(rel)
-    relationships = cleaned_rels
+            errors.append(f"relationships[{idx}] 缺少 from/to")
+        if frm and frm not in character_names:
+            errors.append(f"relationships[{idx}] from 不在角色表: {frm}")
+        if to and to not in character_names:
+            errors.append(f"relationships[{idx}] to 不在角色表: {to}")
 
-    # Auto-add relationships from sex scenes (pairwise)
-    for scene in sex_scenes:
-        if not isinstance(scene, dict):
-            continue
-        participants_list = [str(p).strip() for p in scene.get("participants") or [] if str(p).strip()]
-        if len(participants_list) < 2:
-            continue
-        for i in range(len(participants_list)):
-            for j in range(i + 1, len(participants_list)):
-                a, b = participants_list[i], participants_list[j]
-                key = tuple(sorted([a, b]))
-                if key in rel_keys:
-                    continue
-                rel_keys.add(key)
-                relationships.append({
-                    "from": a,
-                    "to": b,
-                    "type": "性关系",
-                    "start_way": "性场景自动补全",
-                    "description": "auto-added from sex scene"
-                })
-                errors.append(f"added missing relationship: {a} - {b}")
+        rel = {
+            "from": frm,
+            "to": to,
+            "type": _stringify(r.get("type")),
+            "start_way": _stringify(r.get("start_way")),
+            "description": _stringify(r.get("description")),
+        }
+        if not rel["type"]:
+            errors.append(f"relationships[{idx}] 缺少 type: {frm}-{to}")
+        if not rel["start_way"]:
+            errors.append(f"relationships[{idx}] 缺少 start_way: {frm}-{to}")
+        if not rel["description"]:
+            errors.append(f"relationships[{idx}] 缺少 description: {frm}-{to}")
+        cleaned.append(rel)
 
-    data["characters"] = characters
-    data["relationships"] = relationships
-    return data, errors
+    return cleaned, errors
 
+
+def _validate_scenes(scenes: Any, scene_name: str, character_names: set[str]) -> tuple[list[Dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    cleaned: list[Dict[str, Any]] = []
+
+    if not isinstance(scenes, list):
+        return [], [f"{scene_name} 不是数组"]
+
+    for idx, s in enumerate(scenes):
+        if not isinstance(s, dict):
+            errors.append(f"{scene_name}[{idx}] 不是对象")
+            continue
+        participants = s.get("participants")
+        if not isinstance(participants, list) or not participants:
+            errors.append(f"{scene_name}[{idx}] participants 为空")
+            participants_list: list[str] = []
+        else:
+            participants_list = [_stringify(p) for p in participants if _stringify(p)]
+            for p in participants_list:
+                if p not in character_names:
+                    errors.append(f"{scene_name}[{idx}] 参与者不在角色表: {p}")
+
+        chapter = _stringify(s.get("chapter"))
+        location = _stringify(s.get("location"))
+        description = _stringify(s.get("description"))
+        if not chapter:
+            errors.append(f"{scene_name}[{idx}] 缺少 chapter（可用“未知”）")
+        if not location:
+            errors.append(f"{scene_name}[{idx}] 缺少 location（可用“未知”）")
+        if not description:
+            errors.append(f"{scene_name}[{idx}] 缺少 description")
+
+        cleaned.append({
+            "participants": participants_list,
+            "chapter": chapter,
+            "location": location,
+            "description": description,
+        })
+
+    return cleaned, errors
+
+
+def _validate_evolution(evolution: Any) -> tuple[list[Dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    cleaned: list[Dict[str, Any]] = []
+
+    if not isinstance(evolution, list):
+        return [], ["evolution 不是数组"]
+
+    for idx, item in enumerate(evolution):
+        if not isinstance(item, dict):
+            errors.append(f"evolution[{idx}] 不是对象")
+            continue
+        chapter = _stringify(item.get("chapter"))
+        stage = _stringify(item.get("stage"))
+        description = _stringify(item.get("description"))
+        if not chapter:
+            errors.append(f"evolution[{idx}] 缺少 chapter（可用“未知”）")
+        if not stage:
+            errors.append(f"evolution[{idx}] 缺少 stage")
+        if not description:
+            errors.append(f"evolution[{idx}] 缺少 description")
+        cleaned.append({
+            "chapter": chapter,
+            "stage": stage,
+            "description": description,
+        })
+
+    return cleaned, errors
+
+
+def _validate_thunderzones(thunderzones: Any, character_names: set[str]) -> tuple[list[Dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    cleaned: list[Dict[str, Any]] = []
+
+    if not isinstance(thunderzones, list):
+        return [], ["thunderzones 不是数组"]
+
+    for idx, tz in enumerate(thunderzones):
+        if not isinstance(tz, dict):
+            errors.append(f"thunderzones[{idx}] 不是对象")
+            continue
+        tz_type = _stringify(tz.get("type"))
+        severity = _normalize_severity(tz.get("severity"))
+        description = _stringify(tz.get("description"))
+        involved = tz.get("involved_characters")
+        if not tz_type:
+            errors.append(f"thunderzones[{idx}] 缺少 type")
+        if not severity:
+            errors.append(f"thunderzones[{idx}] severity 不规范")
+        if not description:
+            description = "未知"
+        if not isinstance(involved, list) or not involved:
+            errors.append(f"thunderzones[{idx}] involved_characters 为空")
+            involved_names: list[str] = []
+        else:
+            involved_names = [_stringify(p) for p in involved if _stringify(p)]
+            for p in involved_names:
+                if p not in character_names:
+                    errors.append(f"thunderzones[{idx}] 角色不在角色表: {p}")
+        chapter_location = _stringify(tz.get("chapter_location"))
+        relationship_context = _stringify(tz.get("relationship_context"))
+        cleaned.append({
+            "type": tz_type,
+            "severity": severity,
+            "description": description,
+            "involved_characters": involved_names,
+            "chapter_location": chapter_location,
+            "relationship_context": relationship_context,
+        })
+
+    return cleaned, errors
+
+
+def _raise_if_errors(errors: list[str], section: str) -> None:
+    if not errors:
+        return
+    detail = f"{section} 校验失败:\n" + "\n".join(f"- {e}" for e in errors)
+    raise HTTPException(status_code=422, detail=detail)
+
+
+def _validate_meta(data: Dict[str, Any]) -> tuple[Dict[str, Any], str, list[str]]:
+    errors: list[str] = []
+    novel_info = data.get("novel_info")
+    if not isinstance(novel_info, dict):
+        return {}, "", ["novel_info 不是对象"]
+
+    world_setting = _stringify(novel_info.get("world_setting"))
+    world_tags_raw = novel_info.get("world_tags")
+    if not isinstance(world_tags_raw, list):
+        errors.append("novel_info.world_tags 不是数组")
+        world_tags = []
+    else:
+        world_tags = [_stringify(tag) for tag in world_tags_raw if _stringify(tag)]
+
+    chapter_count_raw = novel_info.get("chapter_count", 0)
+    try:
+        chapter_count = int(chapter_count_raw)
+    except Exception:
+        errors.append("novel_info.chapter_count 非整数")
+        chapter_count = 0
+
+    is_completed_raw = novel_info.get("is_completed")
+    if isinstance(is_completed_raw, bool):
+        is_completed = is_completed_raw
+    elif isinstance(is_completed_raw, str):
+        if is_completed_raw.strip().lower() in {"true", "yes", "1"}:
+            is_completed = True
+        elif is_completed_raw.strip().lower() in {"false", "no", "0"}:
+            is_completed = False
+        else:
+            errors.append("novel_info.is_completed 非布尔值")
+            is_completed = False
+    else:
+        errors.append("novel_info.is_completed 非布尔值")
+        is_completed = False
+
+    completion_note = _stringify(novel_info.get("completion_note"))
+    summary = _stringify(data.get("summary"))
+    if not summary:
+        errors.append("summary 为空")
+
+    cleaned_info = {
+        "world_setting": world_setting,
+        "world_tags": world_tags,
+        "chapter_count": chapter_count,
+        "is_completed": is_completed,
+        "completion_note": completion_note,
+    }
+    return cleaned_info, summary, errors
 
 
 @app.middleware("http")
@@ -629,99 +676,23 @@ def test_connection():
         raise HTTPException(status_code=500, detail=f"连接失败: {str(e)}")
 
 
-@app.post("/api/analyze")
-def analyze_novel(req: AnalyzeRequest):
-    """调用LLM分析小说 - 支持多角色多关系"""
+@app.post("/api/analyze/meta")
+def analyze_meta(req: AnalyzeContentRequest):
+    """分析小说基础信息 + 剧情总结"""
     api_url, api_key, model = _get_llm_config()
 
-    prompt_v1 = f"""
-As a professional literary analyst specializing in adult fiction, analyze this novel comprehensively.
+    prompt = f"""
+You are a professional literary analyst specializing in adult fiction.
 
-## Analysis Requirements
+## Task
+Extract novel metadata and write a 200-300 Chinese character summary.
 
-### 0. NOVEL METADATA
-Extract basic novel information:
-- World setting/background (genre, time period, universe type)
-- World tags: short tags array (e.g., "现代都市", "校园", "豪门", "修仙", "科幻")
-- Estimated chapter count (count chapter markers like "第X章", "Chapter X", etc.)
-- Completion status (based on ending - does story conclude or feel unfinished?)
+## Output JSON ONLY
+- Return ONLY one JSON object. No extra text.
+- Use double quotes for keys/strings.
+- Required keys: novel_info, summary.
 
-### 1. SEXUAL CHARACTERS ONLY
-Identify ONLY characters who engage in sexual activities (只包含有性行为的角色):
-- Name/alias
-- Gender role: use lowercase English "male" or "female"
-- Identity: occupation, age, social status
-- Personality traits
-- SEXUAL PREFERENCES & KINKS: Describe what this character enjoys in bed:
-  - Position preferences
-  - Role in sex (dominant/submissive/equal)
-  - Specific kinks: anal, oral, vaginal, BDSM, foot fetish, cum, creampie, gangbang, etc.
-  - Any fetishes mentioned: foot worship, body worship, anal play, etc.
-  - Personality in bed: aggressive, shy, experienced, virgin, etc.
-- FOR FEMALE CHARACTERS ONLY - 淫荡指数 (Lewdness Index) - REQUIRED FOR ALL FEMALES:
-  - Score 1-100 based on: sexual frequency, initiative, variety of partners, openness to kinks
-  - EVERY female character MUST have lewdness_score and lewdness_analysis
-  - Provide brief analysis explaining the score
-- **CRITICAL - FIRST-PERSON NARRATOR**: Many Chinese adult novels use first-person narration ("我"). If the narrator participates in ANY sexual activity, they MUST be listed as a character.
-- Determine their name/alias from how others address them (e.g., "哥哥", "老公", "男友", or actual name). If you cannot determine a specific name/alias, use "我".
-  - Infer gender from context (pronouns, how addressed, role in sex scenes). Default to male if addressed as 哥哥/兄长/老公.
-  - DO NOT omit the narrator just because they use "我". The narrator is a real character.
-
-### 2. ALL SEXUAL RELATIONSHIPS
-Map every sexual relationship in the novel:
-- Who with whom
-- Relationship type: one-night stand/regular/FWB/lover/spouse/etc.
-- How it started
-
-### 3. FIRST SEX SCENES FOR EACH PAIR
-For each sexual pair, find their first intimate scene:
-- Characters involved
-- Chapter location
-- Scene description (under 50 chars)
-
-### 4. COMPLETE INTIMACY STATISTICS
-For ALL sexual activities in the novel:
-- Total scene count
-- For each scene: chapter, participants, location, description
-
-### 5. SEXUAL EVOLUTION
-Track how sexual relationships develop:
-- Key milestones for each pair
-
-### 6. DETAILED SUMMARY
-Write a comprehensive summary (200-300 characters) covering:
-- Main plot and story arc
-- Core sexual themes and dynamics
-- Key character relationships
-
-### 7. THUNDERZONE DETECTION (雷点检测)
-Identify all potential "thunderzones" (deal-breakers) that might upset readers.
-For each thunderzone found, provide: type, severity, characters involved, chapter location, and description.
-
-雷点类型定义:
-- 绿帽/Cuckold: Male character's partner has sex with others (willingly, coerced, or unknowingly)
-- NTR (Netorare): Protagonist's romantic partner/lover/spouse is taken by another character
-- 女性舔狗/Female Doormat: Female character who is excessively submissive, desperately pursues a man with no dignity
-- 恶堕/Fall from Grace: A character who was pure/virtuous/innocent becomes corrupted, sexually liberated, or morally degraded
-- 其他雷点/Other: Any other content that might be a deal-breaker (例如: 乱伦、SM程度过重、角色死亡等)
-
-Severity 判定标准:
-- 高/High: 核心剧情涉及，影响主角或主要配角，涉及详细描写
-- 中/Medium: 支线剧情涉及，影响次要角色，有一定描写
-- 低/Low: 背景提及、回忆片段、一笔带过
-
-## Output Format (JSON ONLY)
-
-### STRICT JSON OUTPUT RULES (MUST FOLLOW)
-- Return ONLY one JSON object. No extra text, no explanations.
-- Final output MUST start with `{{` and end with `}}`.
-- Must be valid JSON: double quotes for keys/strings, no trailing commas, no comments, no NaN/Infinity.
-- Do NOT output `null` for required arrays/objects. Use `[]`, `{{}}`, or `""`.
-- Required top-level keys (MUST exist even if empty):
-  - `novel_info`, `characters`, `relationships`, `first_sex_scenes`, `sex_scenes`, `evolution`, `summary`, `thunderzones`, `thunderzone_summary`
-- If you are unsure about any field, keep the key and use empty values; do not omit keys.
-
-### Schema skeleton (reference only; your FINAL answer must NOT include code fences)
+### Schema
 {{
   "novel_info": {{
     "world_setting": "",
@@ -730,87 +701,193 @@ Severity 判定标准:
     "is_completed": false,
     "completion_note": ""
   }},
+  "summary": ""
+}}
+
+## Novel Content
+{req.content}
+"""
+
+    data = _call_llm_json(api_url, api_key, model, prompt, "Meta")
+    novel_info, summary, errors = _validate_meta(data)
+    _raise_if_errors(errors, "Meta")
+    return {"analysis": {"novel_info": novel_info, "summary": summary}}
+
+
+@app.post("/api/analyze/core")
+def analyze_core(req: AnalyzeContentRequest):
+    """分析角色 + 关系 + 淫荡指数"""
+    api_url, api_key, model = _get_llm_config()
+
+    prompt = f"""
+As a professional literary analyst specializing in adult fiction, extract ONLY characters who engage in sexual activities and their sexual relationships.
+
+## Requirements
+- Characters: ONLY those with sexual activity.
+- Gender MUST be "male" or "female" (lowercase English). No other values.
+- Include: name, gender, identity, personality, sexual_preferences.
+- For female characters: lewdness_score (1-100 int) and lewdness_analysis (required).
+- First-person narrator ("我") must be included if involved; infer name/alias if possible, else use "我".
+- Map every sexual relationship with from/to/type/start_way/description.
+
+## Output JSON ONLY
+{{
   "characters": [],
-  "relationships": [],
+  "relationships": []
+}}
+
+## Novel Content
+{req.content}
+"""
+
+    data = _call_llm_json(api_url, api_key, model, prompt, "Core")
+    characters, errors = _validate_characters(data.get("characters"))
+    if not characters:
+        errors.append("characters 为空")
+    names = {c["name"] for c in characters}
+    relationships, rel_errors = _validate_relationships(
+        data.get("relationships"), names
+    )
+    errors.extend(rel_errors)
+    _raise_if_errors(errors, "Core")
+    return {"analysis": {"characters": characters, "relationships": relationships}}
+
+
+@app.post("/api/analyze/scenes")
+def analyze_scenes(req: AnalyzeScenesRequest):
+    """分析首次场景 + 统计 + 关系发展"""
+    api_url, api_key, model = _get_llm_config()
+
+    characters, char_errors = _validate_characters(req.characters)
+    _raise_if_errors(char_errors, "Scenes 输入角色")
+    names = {c["name"] for c in characters}
+    relationships, rel_errors = _validate_relationships(req.relationships, names)
+    _raise_if_errors(rel_errors, "Scenes 输入关系")
+
+    allowed_names_json = json.dumps([c["name"] for c in characters], ensure_ascii=False)
+    relationships_json = json.dumps(relationships, ensure_ascii=False)
+
+    prompt = f"""
+You are analyzing intimacy scenes and relationship evolution. Use ONLY the provided character names.
+
+### Allowed character names (MUST use exactly):
+{allowed_names_json}
+
+### Known relationships (reference only):
+{relationships_json}
+
+## Output JSON ONLY
+{{
   "first_sex_scenes": [],
   "sex_scenes": {{
     "total_count": 0,
     "scenes": []
   }},
-  "evolution": [],
-  "summary": "",
+  "evolution": []
+}}
+
+## Rules
+- participants must be from allowed names; do NOT invent new names.
+- chapter/location/description MUST be non-empty strings. If unknown, write "未知" or "未提及".
+- evolution.chapter/stage/description MUST be non-empty strings. If unknown, write "未知" or "未提及".
+- sex_scenes.total_count must be an integer.
+
+## Novel Content
+{req.content}
+"""
+
+    data = _call_llm_json(api_url, api_key, model, prompt, "Scenes")
+    errors: list[str] = []
+    first_scenes, first_errors = _validate_scenes(
+        data.get("first_sex_scenes"), "first_sex_scenes", names
+    )
+    errors.extend(first_errors)
+
+    sex_data = data.get("sex_scenes")
+    if not isinstance(sex_data, dict):
+        errors.append("sex_scenes 不是对象")
+        sex_data = {}
+    sex_scenes, sex_errors = _validate_scenes(
+        sex_data.get("scenes"), "sex_scenes.scenes", names
+    )
+    errors.extend(sex_errors)
+    total_count_raw = sex_data.get("total_count", len(sex_scenes))
+    try:
+        total_count = int(total_count_raw)
+    except Exception:
+        errors.append("sex_scenes.total_count 非整数")
+        total_count = len(sex_scenes)
+    if total_count < len(sex_scenes):
+        total_count = len(sex_scenes)
+
+    evolution, evo_errors = _validate_evolution(data.get("evolution"))
+    errors.extend(evo_errors)
+    _raise_if_errors(errors, "Scenes")
+    return {
+        "analysis": {
+            "first_sex_scenes": first_scenes,
+            "sex_scenes": {"total_count": total_count, "scenes": sex_scenes},
+            "evolution": evolution,
+        }
+    }
+
+
+@app.post("/api/analyze/thunderzones")
+def analyze_thunderzones(req: AnalyzeThunderzonesRequest):
+    """分析雷点"""
+    api_url, api_key, model = _get_llm_config()
+
+    characters, char_errors = _validate_characters(req.characters)
+    _raise_if_errors(char_errors, "Thunder 输入角色")
+    names = {c["name"] for c in characters}
+    relationships, rel_errors = _validate_relationships(req.relationships, names)
+    _raise_if_errors(rel_errors, "Thunder 输入关系")
+
+    allowed_names_json = json.dumps([c["name"] for c in characters], ensure_ascii=False)
+    relationships_json = json.dumps(relationships, ensure_ascii=False)
+
+    prompt = f"""
+You are detecting thunderzones (reader deal-breakers) in an adult novel. Use ONLY the provided character names.
+
+### Allowed character names (MUST use exactly):
+{allowed_names_json}
+
+### Known relationships (reference only):
+{relationships_json}
+
+## Thunderzone types
+- 绿帽/Cuckold
+- NTR (Netorare)
+- 女性舔狗
+- 恶堕
+- 其他
+
+Severity must be: 高 / 中 / 低.
+
+## Output JSON ONLY
+{{
   "thunderzones": [],
   "thunderzone_summary": ""
 }}
 
-### Field requirements (when items exist)
-- `characters[i]` MUST include: `name`, `gender`, `identity`, `personality`, `sexual_preferences`.
-  - `gender` MUST be "male" or "female" (lowercase English).
-  - For FEMALE characters also include `lewdness_score` (1-100 integer) and `lewdness_analysis`.
-- `relationships[i]` MUST include: `from`, `to`, `type`, `start_way`, `description` (all strings).
-- `first_sex_scenes[i]` MUST include: `participants` (non-empty string array), `chapter`, `location`, `description`.
-- `sex_scenes.scenes[i]` MUST include: `chapter`, `participants` (non-empty string array), `location`, `description`.
-- `evolution[i]` MUST include: `chapter`, `stage`, `description`.
-- `thunderzones[i]` MUST include: `type`, `severity` (高/中/低), `description`, `involved_characters` (string array), `chapter_location`, `relationship_context`.
-
-### If you cannot produce valid JSON
-Return the schema skeleton EXACTLY (with empty arrays/strings) and nothing else.
-
-## Notes
-- ONLY include characters who have sexual activities (not all characters)
-- Be thorough about sexual preferences
-- Output MUST be valid JSON only
+## Rules
+- involved_characters must be from allowed names; do NOT invent new names.
+- description MUST be non-empty. If unknown, write "未知" or "未提及".
+- chapter_location is OPTIONAL. If unknown, you can leave it empty.
+- relationship_context can be empty, but if provided must be a string.
+- If no thunderzones, return empty array and a short summary.
+- Use EXACT keys: type, severity, description, involved_characters, chapter_location, relationship_context.
+- If you cannot provide a non-empty description for an item, DO NOT include that item.
 
 ## Novel Content
-
 {req.content}
 """
 
-    prompts = [
-        ("multi-character", prompt_v1)
-    ]
-
-    analysis = None
-    last_error = None
-    raw_response = None
-
-    for style_name, prompt in prompts:
-        try:
-            content, _raw = call_llm_with_response(api_url, api_key, model, prompt, temperature=0.7)
-            analysis = extract_json_from_response(content)
-
-            if analysis and ('characters' in analysis or 'sex_scenes' in analysis):
-                break
-            else:
-                last_error = f"数据格式异常(内容长:{len(content)})"
-                raw_response = content[:1000]
-        except LLMCallError as e:
-            last_error = str(e)
-            if e.raw_response:
-                raw_response = e.raw_response
-            continue
-        except Exception as e:
-            last_error = str(e)
-            continue
-
-    if not analysis:
-        error_msg = f"分析失败: {last_error}"
-        if raw_response and DEBUG:
-            error_msg += f"\n\n原始响应:\n{raw_response[:2000]}"
-        elif "返回内容过短" in last_error:
-            error_msg += "\n\n原始响应内容太短，API可能拦截了请求"
-
-        raise HTTPException(status_code=422, detail=error_msg)
-    analysis = _ensure_analysis_defaults(analysis)
-
-    # Local schema validation & reconciliation only (single LLM call)
-    analysis, _ = _validate_and_fix_analysis(analysis)
-    analysis, _ = _reconcile_entities(analysis)
-    analysis, _ = _validate_and_fix_analysis(analysis)
-
-    if not analysis.get("characters"):
-        raise HTTPException(status_code=422, detail="分析失败: 无有效角色（模型输出无法修复）")
-    return {"analysis": analysis}
+    data = _call_llm_json(api_url, api_key, model, prompt, "Thunder")
+    thunderzones, errors = _validate_thunderzones(data.get("thunderzones"), names)
+    summary = _stringify(data.get("thunderzone_summary"))
+    _raise_if_errors(errors, "Thunder")
+    return {"analysis": {"thunderzones": thunderzones, "thunderzone_summary": summary}}
 
 
 if __name__ == "__main__":

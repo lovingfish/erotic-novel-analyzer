@@ -186,6 +186,32 @@
                 点击右上角“开始分析”生成新结果（旧结果已清空）
               </div>
             </div>
+            <!-- 进度 -->
+            <div x-show="currentTab === 'pipeline'" x-cloak>
+              <div class="glass-card p-6 mb-8">
+                <div class="card-header mb-4">
+                  <i data-lucide="activity" class="card-icon"></i>
+                  <span class="card-title">分析进度</span>
+                </div>
+                <div class="progress-list">
+                  <template x-for="step in progressSteps" :key="step.id">
+                    <div class="progress-item" :class="'status-' + step.status">
+                      <div
+                        class="progress-icon"
+                        :class="{ 'spin': step.status === 'running' }"
+                      >
+                        <i :data-lucide="statusIcon(step.status)"></i>
+                      </div>
+                      <div class="progress-content">
+                        <div class="progress-name" x-text="step.label"></div>
+                        <div class="progress-detail" x-text="step.detail"></div>
+                      </div>
+                      <div class="progress-status" x-text="statusLabel(step.status)"></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
             <!-- 总结 -->
             <div x-show="currentTab === 'summary'" x-cloak>
               <div id="quickStats"></div>
@@ -416,11 +442,12 @@
           errorMsg: "",
           novelTitle: "选择一本小说",
           fileStats: "加载中...",
-          currentTab: "summary",
+          currentTab: "pipeline",
           testResult: "",
           testResultMsg: "",
           testLoading: false,
           tabs: [
+            { id: "pipeline", name: "进度", alwaysEnabled: true },
             { id: "summary", name: "总结", alwaysEnabled: true },
             { id: "thunderzones", name: "雷点" },
             { id: "characters", name: "角色" },
@@ -431,6 +458,7 @@
             { id: "logs", name: "日志", alwaysEnabled: true },
           ],
           logs: [],
+          progressSteps: [],
 
           init() {
             this.$watch("theme", (val) => localStorage.setItem("theme", val));
@@ -451,6 +479,7 @@
             localStorage.removeItem("novel_analyzer_model_name");
             this.loadServerConfig();
             this.scanNovels();
+            this.initProgressSteps();
             this.restoreAnalysis();
             this.log("info", "应用初始化完成");
             // Initialize Lucide icons
@@ -479,6 +508,107 @@
             const value = Number(count);
             if (!Number.isFinite(value) || value <= 0) return "0";
             return value > 10000 ? (value / 10000).toFixed(1) + "万" : String(value);
+          },
+
+          initProgressSteps() {
+            this.progressSteps = [
+              {
+                id: "select",
+                label: "选择小说",
+                status: "idle",
+                detail: "等待选择小说",
+              },
+              {
+                id: "load",
+                label: "读取小说",
+                status: "idle",
+                detail: "等待读取",
+              },
+              {
+                id: "meta",
+                label: "基础信息 / 总结",
+                status: "idle",
+                detail: "等待分析",
+              },
+              {
+                id: "core",
+                label: "角色 / 关系 / 淫荡指数",
+                status: "idle",
+                detail: "等待分析",
+              },
+              {
+                id: "scenes",
+                label: "首次 / 统计 / 发展",
+                status: "idle",
+                detail: "等待分析",
+              },
+              {
+                id: "thunder",
+                label: "雷点检测",
+                status: "idle",
+                detail: "等待分析",
+              },
+              {
+                id: "merge",
+                label: "合并渲染",
+                status: "idle",
+                detail: "等待分析",
+              },
+            ];
+            this.refreshProgressIcons();
+          },
+
+          refreshProgressIcons() {
+            if (typeof lucide !== "undefined") {
+              lucide.createIcons();
+            }
+          },
+
+          statusLabel(status) {
+            const map = {
+              idle: "未开始",
+              pending: "等待中",
+              running: "进行中",
+              done: "已完成",
+              error: "失败",
+            };
+            return map[status] || status;
+          },
+
+          statusIcon(status) {
+            const map = {
+              idle: "circle",
+              pending: "clock",
+              running: "loader-2",
+              done: "check-circle-2",
+              error: "x-circle",
+            };
+            return map[status] || "circle";
+          },
+
+          setProgress(id, status, detail) {
+            const step = this.progressSteps.find((s) => s.id === id);
+            if (!step) return;
+            step.status = status;
+            if (detail !== undefined) {
+              step.detail = detail;
+            }
+            this.refreshProgressIcons();
+          },
+
+          resetProgress() {
+            this.initProgressSteps();
+          },
+
+          markProgressRestored() {
+            this.initProgressSteps();
+            this.setProgress("select", "done", "已恢复选择");
+            this.setProgress("load", "done", "已恢复内容");
+            this.setProgress("meta", "done", "已恢复");
+            this.setProgress("core", "done", "已恢复");
+            this.setProgress("scenes", "done", "已恢复");
+            this.setProgress("thunder", "done", "已恢复");
+            this.setProgress("merge", "done", "已恢复渲染");
           },
 
           log(level, message, data = null) {
@@ -616,22 +746,44 @@
             this.currentNovelLength = 0;
             localStorage.removeItem("novel_analyzer_data");
             this.clearRenderedResults();
-            this.currentTab = "summary";
+            this.resetProgress();
+            this.currentTab = "pipeline";
             this.errorMsg = "";
             this.log("info", `选择小说: ${name}`);
+            this.setProgress("select", "done", `已选择：${name}`);
+            this.setProgress("load", "running", "读取小说中...");
 
             try {
               const res = await fetch(`/api/novel/${encodeURIComponent(path)}`);
               const data = await res.json();
               this.currentNovelContent = data.content;
               this.currentNovelLength = data.length;
+              this.setProgress(
+                "load",
+                "done",
+                `字数：${this.formatWordCount(data.length)}字`
+              );
               this.log("success", `小说加载成功，字数: ${data.length}`);
             } catch (e) {
               this.errorMsg = "读取小说失败: " + e.message;
               this.currentNovelContent = null;
               this.currentNovelLength = 0;
+              this.setProgress("load", "error", "读取失败");
               this.log("error", "读取失败", e.message);
             }
+          },
+
+          async postJson(url, payload) {
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              throw new Error(data.detail || "分析失败");
+            }
+            return data;
           },
 
           async analyzeNovel() {
@@ -643,28 +795,86 @@
             this.errorMsg = "";
             this.loading = true;
             this.log("info", `开始分析: ${this.selectedNovel.name}`);
+            this.analysisComplete = false;
+            this.currentAnalysis = null;
+            this.currentTab = "pipeline";
+            this.setProgress("meta", "running", "请求中...");
+            this.setProgress("core", "running", "请求中...");
+            this.setProgress("scenes", "pending", "等待角色结果");
+            this.setProgress("thunder", "pending", "等待角色结果");
+            this.setProgress("merge", "pending", "等待合并");
 
             try {
-              const res = await fetch("/api/analyze", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  content: this.currentNovelContent,
-                }),
-              });
-              const data = await res.json();
-              if (!res.ok) throw new Error(data.detail || "分析失败");
+              const runStep = async (id, fn) => {
+                try {
+                  const data = await fn();
+                  this.setProgress(id, "done", "已完成");
+                  return data;
+                } catch (e) {
+                  this.setProgress(id, "error", e.message || "失败");
+                  throw e;
+                }
+              };
+
+              const [metaRes, coreRes] = await Promise.all([
+                runStep("meta", () =>
+                  this.postJson("/api/analyze/meta", {
+                    content: this.currentNovelContent,
+                  }).then((data) => data.analysis)
+                ),
+                runStep("core", () =>
+                  this.postJson("/api/analyze/core", {
+                    content: this.currentNovelContent,
+                  }).then((data) => data.analysis)
+                ),
+              ]);
+
+              this.setProgress("scenes", "running", "请求中...");
+              this.setProgress("thunder", "running", "请求中...");
+
+              const [scenesRes, thunderRes] = await Promise.all([
+                runStep("scenes", () =>
+                  this.postJson("/api/analyze/scenes", {
+                    content: this.currentNovelContent,
+                    characters: coreRes.characters,
+                    relationships: coreRes.relationships,
+                  }).then((data) => data.analysis)
+                ),
+                runStep("thunder", () =>
+                  this.postJson("/api/analyze/thunderzones", {
+                    content: this.currentNovelContent,
+                    characters: coreRes.characters,
+                    relationships: coreRes.relationships,
+                  }).then((data) => data.analysis)
+                ),
+              ]);
+
+              this.setProgress("merge", "running", "渲染中...");
+
+              const analysis = {
+                novel_info: metaRes.novel_info || {},
+                summary: metaRes.summary || "",
+                characters: coreRes.characters || [],
+                relationships: coreRes.relationships || [],
+                first_sex_scenes: scenesRes.first_sex_scenes || [],
+                sex_scenes: scenesRes.sex_scenes || { total_count: 0, scenes: [] },
+                evolution: scenesRes.evolution || [],
+                thunderzones: thunderRes.thunderzones || [],
+                thunderzone_summary: thunderRes.thunderzone_summary || "",
+              };
 
               this.log("success", "分析完成");
-              this.currentAnalysis = data.analysis;
-              this.saveAnalysisToStorage(data.analysis);
-              this.renderAllData(data.analysis);
+              this.currentAnalysis = analysis;
+              this.saveAnalysisToStorage(analysis);
+              this.renderAllData(analysis);
               this.analysisComplete = true;
+              this.setProgress("merge", "done", "已完成");
               this.currentTab = "summary";
               this.showToast("分析完成", "success");
             } catch (e) {
               const errMsg = e.message || "未知错误";
               this.errorMsg = errMsg;
+              this.setProgress("merge", "error", "失败");
               this.log("error", "分析失败", {
                 error: errMsg,
                 novel: this.selectedNovel?.name,
@@ -745,6 +955,8 @@
                   this.novelTitle = data.novel.name;
                   this.analysisComplete = true;
                   this.renderAllData(data.analysis);
+                  this.markProgressRestored();
+                  this.currentTab = "summary";
                   this.showToast("已恢复上次分析结果", "info");
                   this.log("info", "已恢复上次分析结果");
               }
@@ -761,7 +973,8 @@
             this.analysisComplete = false;
             this.currentNovelContent = null;
             this.currentNovelLength = 0;
-            this.currentTab = "summary";
+            this.currentTab = "pipeline";
+            this.resetProgress();
             document
               .querySelectorAll(".file-item")
               .forEach((el) => el.classList.remove("bg-primary/20"));
