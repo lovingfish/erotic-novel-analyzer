@@ -436,14 +436,14 @@
             this.$watch("theme", (val) => localStorage.setItem("theme", val));
             this.$watch("currentTab", (val) => {
               if (val === "relationships" && this.currentAnalysis) {
-                setTimeout(
-                  () =>
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() =>
                     renderRelationshipGraph(
                       "relationshipChart",
                       this.currentAnalysis
-                    ),
-                  450
-                );
+                    )
+                  );
+                });
               }
             });
             localStorage.removeItem("novel_analyzer_api_url");
@@ -702,10 +702,13 @@
             renderThunderzones(document.getElementById("thunderzoneSection"), {
               analysis: data,
             });
-            setTimeout(
-              () => renderRelationshipGraph("relationshipChart", data),
-              450
-            );
+            if (this.currentTab === "relationships") {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() =>
+                  renderRelationshipGraph("relationshipChart", data)
+                );
+              });
+            }
           },
 
           saveAnalysisToStorage(analysis) {

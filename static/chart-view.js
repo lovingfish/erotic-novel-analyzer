@@ -24,6 +24,21 @@ function sanitizeFilename(name) {
   return base || "report";
 }
 
+function buildEmptyStateHtml(iconName, text) {
+  return `
+        <div class="empty-state">
+            <div class="empty-icon"><i data-lucide="${iconName}"></i></div>
+            <div class="empty-text">${escapeHtml(text)}</div>
+        </div>
+    `;
+}
+
+function refreshLucideIcons() {
+  if (typeof lucide !== "undefined") {
+    lucide.createIcons();
+  }
+}
+
 function buildQuickStatsHtml({
   sexCount,
   relationshipCount,
@@ -126,16 +141,14 @@ function renderQuickStats(container, stats) {
   if (!container) return;
   container.replaceChildren();
   container.insertAdjacentHTML("beforeend", buildQuickStatsHtml(stats));
-  // Re-initialize Lucide icons for dynamically added content
-  if (typeof lucide !== "undefined") {
-    lucide.createIcons();
-  }
+  refreshLucideIcons();
 }
 
 function renderThunderzones(container, data) {
   if (!container) return;
   const html = buildThunderzonesHtml(data?.analysis);
   container.innerHTML = html;
+  refreshLucideIcons();
 }
 
 // 获取DaisyUI主题颜色
@@ -179,7 +192,7 @@ function buildRelationshipSvgHtml(
   { width = 1200, height = 800, isDark } = {}
 ) {
   if (!data || (!data.characters && !data.relationships)) {
-    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
+    return buildEmptyStateHtml("git-branch", "暂无关系数据");
   }
 
   const allCharacters = Array.isArray(data.characters) ? data.characters : [];
@@ -198,7 +211,7 @@ function buildRelationshipSvgHtml(
   );
 
   if (characters.length === 0 && relationships.length === 0) {
-    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
+    return buildEmptyStateHtml("git-branch", "暂无性关系数据");
   }
 
   const displayWidth = Math.max(1, Math.round(Number(width) || 1200));
@@ -327,8 +340,8 @@ function renderRelationshipGraph(containerId, data) {
   container.innerHTML = "";
 
   if (!data || (!data.characters && !data.relationships)) {
-    container.innerHTML =
-      '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系数据</div></div>';
+    container.innerHTML = buildEmptyStateHtml("git-branch", "暂无关系数据");
+    refreshLucideIcons();
     return;
   }
 
@@ -348,8 +361,8 @@ function renderRelationshipGraph(containerId, data) {
   );
 
   if (characters.length === 0 && relationships.length === 0) {
-    container.innerHTML =
-      '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无性关系数据</div></div>';
+    container.innerHTML = buildEmptyStateHtml("git-branch", "暂无性关系数据");
+    refreshLucideIcons();
     return;
   }
 
@@ -504,7 +517,7 @@ function renderRelationshipGraph(containerId, data) {
 
 function buildCharactersHtml(data) {
   if (!data || !data.characters || data.characters.length === 0) {
-    return '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">暂无角色数据</div></div>';
+    return buildEmptyStateHtml("users", "暂无角色数据");
   }
 
   const males = data.characters.filter((c) => c.gender === "male");
@@ -632,7 +645,7 @@ function getLewdnessColor(score) {
 
 function buildFirstSexSceneHtml(data) {
   if (!data || !data.first_sex_scenes || data.first_sex_scenes.length === 0) {
-    return '<div class="empty-state"><div class="empty-icon">💕</div><div class="empty-text">暂无首次亲密数据</div></div>';
+    return buildEmptyStateHtml("heart", "暂无首次亲密数据");
   }
 
   return data.first_sex_scenes
@@ -667,7 +680,7 @@ function renderFirstSexScene(data) {
 
 function buildSexSceneCountHtml(data) {
   if (!data || !data.sex_scenes) {
-    return '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">暂无统计数据</div></div>';
+    return buildEmptyStateHtml("bar-chart-3", "暂无统计数据");
   }
 
   const scenes = data.sex_scenes;
@@ -720,7 +733,7 @@ function renderSexSceneCount(data) {
 
 function buildRelationshipProgressHtml(data) {
   if (!data || !data.evolution || data.evolution.length === 0) {
-    return '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">暂无发展数据</div></div>';
+    return buildEmptyStateHtml("line-chart", "暂无发展数据");
   }
 
   return `
@@ -756,7 +769,7 @@ function renderRelationshipProgress(data) {
 
 function buildRelationshipSummaryHtml(data) {
   if (!data) {
-    return '<div class="empty-state"><div class="empty-icon">📖</div><div class="empty-text">暂无数据</div></div>';
+    return buildEmptyStateHtml("book-open", "暂无数据");
   }
 
   const chars = data.characters || [];
@@ -819,7 +832,7 @@ function buildRelationshipDetailsHtml(data) {
     : [];
 
   if (relationships.length === 0) {
-    return '<div class="empty-state"><div class="empty-icon">🔗</div><div class="empty-text">暂无关系详情</div></div>';
+    return buildEmptyStateHtml("list", "暂无关系详情");
   }
 
   const itemsHtml = relationships
@@ -869,12 +882,7 @@ function buildThunderzonesHtml(analysisData) {
     : [];
 
   if (thunderzones.length === 0) {
-    return `
-            <div class="empty-state">
-                <div class="empty-icon">✅</div>
-                <div class="empty-text">未检测到雷点</div>
-            </div>
-        `;
+    return buildEmptyStateHtml("shield-check", "未检测到雷点");
   }
 
   const normalizeSeverity = (value) => {
@@ -906,11 +914,11 @@ function buildThunderzonesHtml(analysisData) {
   );
 
   const typeIcons = {
-    绿帽: "🟢",
-    NTR: "🔴",
-    女性舔狗: "🟡",
-    恶堕: "🟣",
-    其他: "⚪",
+    绿帽: "alert-triangle",
+    NTR: "flame",
+    女性舔狗: "user",
+    恶堕: "alert-octagon",
+    其他: "circle",
   };
 
   const severityColors = {
@@ -947,30 +955,30 @@ function buildThunderzonesHtml(analysisData) {
       ? escapeHtml(thunderzone.relationship_context)
       : "";
 
-    const icon = typeIcons[typeKey] || "⚪";
+    const iconName = typeIcons[typeKey] || "circle";
     const badgeClass = severityColors[severityNormalized] || "badge-ghost";
     const cardClass = severityNormalized === "高" ? "thunderzone-high" : "";
 
     html += `
             <div class="thunderzone-card ${cardClass}">
                 <div class="thunderzone-header">
-                    <span class="thunderzone-icon">${icon}</span>
+                    <span class="thunderzone-icon"><i data-lucide="${iconName}"></i></span>
                     <span class="thunderzone-type">${type}</span>
                     <span class="badge ${badgeClass}">${severity}</span>
                 </div>
                 <div class="thunderzone-body">
                     <p class="thunderzone-desc">${description}</p>
                     <div class="thunderzone-meta">
-                        <span class="meta-item">👥 ${
+                        <span class="meta-item"><i data-lucide="users" class="meta-icon"></i>${
                           charactersText || "未指定"
                         }</span>
-                        <span class="meta-item">📍 ${
+                        <span class="meta-item"><i data-lucide="map-pin" class="meta-icon"></i>${
                           location || "未知位置"
                         }</span>
                     </div>
                     ${
                       context
-                        ? `<p class="thunderzone-context">🔗 关系背景: ${context}</p>`
+                        ? `<p class="thunderzone-context"><i data-lucide="link-2" class="meta-icon"></i>关系背景: ${context}</p>`
                         : ""
                     }
                 </div>
@@ -987,10 +995,7 @@ function renderRelationshipSummary(data) {
   if (!container) return;
 
   container.innerHTML = buildRelationshipSummaryHtml(data);
-  // Re-initialize Lucide icons for dynamically added content
-  if (typeof lucide !== 'undefined') {
-    lucide.createIcons();
-  }
+  refreshLucideIcons();
 }
 
 function renderRelationshipDetails(data) {
@@ -998,6 +1003,7 @@ function renderRelationshipDetails(data) {
   if (!container) return;
 
   container.innerHTML = buildRelationshipDetailsHtml(data);
+  refreshLucideIcons();
 }
 
 function exportReport(analysis, novelName, opts = {}) {
@@ -1106,20 +1112,24 @@ function exportReport(analysis, novelName, opts = {}) {
 .char-name-tag.male { background: oklch(var(--in) / 0.15); color: oklch(var(--in)); }
 .char-name-tag.female { background: oklch(var(--er) / 0.15); color: oklch(var(--er)); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; opacity: 0.5; }
-.empty-icon { font-size: 3rem; margin-bottom: 1rem; }
+  .empty-icon { width: 3rem; height: 3rem; margin-bottom: 1rem; opacity: 0.5; display: flex; align-items: center; justify-content: center; }
+  .empty-icon svg { width: 3rem; height: 3rem; }
 .empty-text { font-size: 1rem; }
 .thunderzone-list { display: flex; flex-direction: column; gap: 1rem; }
 .thunderzone-card { background: oklch(var(--b2)); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; transition: all 0.2s; }
 .thunderzone-card:hover { border-color: oklch(var(--bc) / 0.2); transform: translateY(-2px); box-shadow: 0 4px 12px oklch(var(--bc) / 0.1); }
 .thunderzone-card.thunderzone-high { border-color: oklch(var(--er) / 0.5); background: oklch(var(--er) / 0.05); }
 .thunderzone-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
-.thunderzone-icon { font-size: 1.5rem; line-height: 1; }
+  .thunderzone-icon { display: flex; align-items: center; }
+  .thunderzone-icon svg { width: 1.5rem; height: 1.5rem; }
 .thunderzone-type { font-size: 1rem; font-weight: 600; color: oklch(var(--bc)); }
 .thunderzone-body { display: flex; flex-direction: column; gap: 0.75rem; }
 .thunderzone-desc { font-size: 0.9375rem; opacity: 0.8; line-height: 1.6; margin: 0; }
 .thunderzone-meta { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.875rem; opacity: 0.7; }
-.meta-item { display: flex; align-items: center; gap: 0.25rem; }
-.thunderzone-context { font-size: 0.875rem; opacity: 0.6; font-style: italic; margin: 0; padding-top: 0.5rem; border-top: 1px solid oklch(var(--bc) / 0.1); }
+  .meta-item { display: flex; align-items: center; gap: 0.25rem; }
+  .meta-icon { display: inline-flex; }
+  .meta-icon svg { width: 0.9rem; height: 0.9rem; }
+  .thunderzone-context { font-size: 0.875rem; opacity: 0.6; font-style: italic; margin: 0; padding-top: 0.5rem; border-top: 1px solid oklch(var(--bc) / 0.1); display: flex; align-items: center; gap: 0.35rem; }
 @media (max-width: 768px) {
     .char-grid { grid-template-columns: 1fr; }
     .novel-meta-grid { grid-template-columns: 1fr; }

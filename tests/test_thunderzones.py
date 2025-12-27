@@ -25,7 +25,7 @@ def _build_thunderzones_html(page, analysis: dict) -> str:
 def test_build_thunderzones_html_empty(page):
     html = _build_thunderzones_html(page, {})
     assert "未检测到雷点" in html
-    assert "✅" in html
+    assert 'data-lucide="shield-check"' in html
 
 
 def test_build_thunderzones_html_with_data(page):

@@ -675,9 +675,17 @@
   color: var(--text-secondary);
 }
 .empty-icon {
-  font-size: 4rem;
+  width: 4rem;
+  height: 4rem;
   margin-bottom: 1.5rem;
-  opacity: 0.3;
+  opacity: 0.35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty-icon svg {
+  width: 3.5rem;
+  height: 3.5rem;
 }
 .empty-text {
   font-size: 1.125rem;
@@ -742,8 +750,12 @@
 }
 
 .thunderzone-icon {
-  font-size: 1.5rem;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+.thunderzone-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .thunderzone-type {
@@ -778,6 +790,13 @@
   align-items: center;
   gap: 0.25rem;
 }
+.meta-icon {
+  display: inline-flex;
+}
+.meta-icon svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
 
 .thunderzone-context {
   font-size: 0.875rem;
@@ -786,6 +805,9 @@
   margin: 0;
   padding-top: 0.5rem;
   border-top: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* 响应式 - 移动端优化 */
@@ -1015,4 +1037,3 @@
   padding: 0;
   border: none;
 }
-
