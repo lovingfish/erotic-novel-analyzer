@@ -19,6 +19,13 @@ from pydantic import BaseModel, ConfigDict
 from dotenv import load_dotenv
 import requests
 
+from prompts import (
+    build_core_prompt,
+    build_meta_prompt,
+    build_scenes_prompt,
+    build_thunderzones_prompt,
+)
+
 load_dotenv()
 
 DEBUG = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "y"}
@@ -53,6 +60,165 @@ class AnalyzeThunderzonesRequest(BaseModel):
     content: str
     characters: list[Dict[str, Any]]
     relationships: list[Dict[str, Any]]
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip()
+    if raw == "":
+        return default
+    return raw.lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if raw == "":
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def _prepare_llm_content(content: str, section: str) -> str:
+    max_chars = _env_int(f"LLM_CONTENT_MAX_CHARS_{section.upper()}", -1)
+    if max_chars < 0:
+        max_chars = _env_int("LLM_CONTENT_MAX_CHARS", 24000)
+    if max_chars <= 0:
+        return content
+    if len(content) <= max_chars:
+        return content
+
+    strategy = (os.getenv(f"LLM_CONTENT_STRATEGY_{section.upper()}", "") or "").strip().lower()
+    if not strategy:
+        strategy = (
+            (os.getenv("LLM_CONTENT_STRATEGY", "head_middle_tail") or "")
+            .strip()
+            .lower()
+            or "head_middle_tail"
+        )
+
+    marker = "\n\n...[TRUNCATED]...\n\n"
+    keep = max_chars
+
+    if strategy in {"tail", "end"}:
+        return content[-keep:]
+    if strategy in {"head", "start"}:
+        return content[:keep]
+    if strategy in {"head_tail", "start_end"}:
+        head_len = keep // 2
+        tail_len = keep - head_len - len(marker)
+        if tail_len <= 0:
+            return content[:keep]
+        return content[:head_len] + marker + content[-tail_len:]
+
+    if strategy in {"head_middle_tail"}:
+        marker_len = len(marker)
+        available = keep - 2 * marker_len
+        if available >= 3:
+            head_len = available // 3
+            mid_len = available // 3
+            tail_len = available - head_len - mid_len
+
+            mid_start = max(0, (len(content) // 2) - (mid_len // 2))
+            mid_end = min(len(content), mid_start + mid_len)
+            middle = content[mid_start:mid_end]
+            return content[:head_len] + marker + middle + marker + content[-tail_len:]
+
+        head_len = keep // 2
+        tail_len = keep - head_len - marker_len
+        if tail_len <= 0:
+            return content[:keep]
+        return content[:head_len] + marker + content[-tail_len:]
+
+    return content[:keep]
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return text
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
+
+
+def _extract_prompt_header(prompt: str) -> str:
+    marker = "## Novel Content"
+    head_max = _env_int("LLM_REPAIR_PROMPT_HEAD_MAX_CHARS", 8000)
+    if marker in prompt:
+        head = prompt.split(marker, 1)[0].strip()
+    else:
+        head = prompt.strip()
+    return _truncate_text(head, head_max)
+
+
+def _should_repair(section: str) -> bool:
+    default_enabled = _env_bool("LLM_REPAIR_ENABLED", True)
+    return _env_bool(f"LLM_REPAIR_ENABLED_{section.upper()}", default_enabled)
+
+
+def _build_repair_prompt(
+    section: str,
+    original_prompt: str,
+    bad_data: Any,
+    reason: str,
+    errors: list[str] | None,
+) -> str:
+    header = _extract_prompt_header(original_prompt)
+    bad_max = _env_int("LLM_REPAIR_BAD_OUTPUT_MAX_CHARS", 6000)
+
+    if isinstance(bad_data, str):
+        bad_text = bad_data
+    else:
+        try:
+            bad_text = json.dumps(bad_data, ensure_ascii=False)
+        except Exception:
+            bad_text = str(bad_data)
+
+    bad_text = _truncate_text(bad_text, bad_max)
+
+    errors_text = ""
+    if errors:
+        errors_text = "\n".join(f"- {e}" for e in errors)
+    else:
+        errors_text = "- (none)"
+
+    return f"""You are a strict JSON repairer.
+
+## Section
+{section}
+
+## Reason
+{reason}
+
+## Original requirements (excerpt)
+{header}
+
+## Bad output
+{bad_text}
+
+## Validation errors
+{errors_text}
+
+## Task
+- Fix the JSON to satisfy the schema.
+- Output ONLY one JSON object.
+- Use double quotes for keys and strings.
+- No extra text, no markdown.
+"""
+
+
+def _repair_llm_json(
+    api_url: str,
+    api_key: str,
+    model: str,
+    original_prompt: str,
+    section: str,
+    bad_data: Any,
+    reason: str,
+    errors: list[str],
+) -> Dict[str, Any]:
+    repair_prompt = _build_repair_prompt(section, original_prompt, bad_data, reason, errors)
+    return _call_llm_json(api_url, api_key, model, repair_prompt, section, repair_attempted=True)
 
 
 def _get_llm_config() -> tuple[str, str, str]:
@@ -95,6 +261,216 @@ class LLMCallError(Exception):
     def __init__(self, message: str, raw_response: str | None = None):
         super().__init__(message)
         self.raw_response = raw_response
+
+
+def _get_function_calling_tool(section: str) -> Dict[str, Any] | None:
+    if section == "Meta":
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_meta",
+                "description": "Extract novel metadata and a Chinese summary.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "novel_info": {
+                            "type": "object",
+                            "properties": {
+                                "world_setting": {"type": "string"},
+                                "world_tags": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "chapter_count": {"type": "integer"},
+                                "is_completed": {"type": "boolean"},
+                                "completion_note": {"type": "string"},
+                            },
+                            "required": [
+                                "world_setting",
+                                "world_tags",
+                                "chapter_count",
+                                "is_completed",
+                                "completion_note",
+                            ],
+                            "additionalProperties": False,
+                        },
+                        "summary": {"type": "string"},
+                    },
+                    "required": ["novel_info", "summary"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    if section == "Core":
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_core",
+                "description": "Extract sexually active characters and their sexual relationships.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "characters": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "gender": {"type": "string"},
+                                    "identity": {"type": "string"},
+                                    "personality": {"type": "string"},
+                                    "sexual_preferences": {"type": "string"},
+                                    "lewdness_score": {"type": "integer"},
+                                    "lewdness_analysis": {"type": "string"},
+                                },
+                                "required": [
+                                    "name",
+                                    "gender",
+                                    "identity",
+                                    "personality",
+                                    "sexual_preferences",
+                                ],
+                                "additionalProperties": True,
+                            },
+                        },
+                        "relationships": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "from": {"type": "string"},
+                                    "to": {"type": "string"},
+                                    "type": {"type": "string"},
+                                    "start_way": {"type": "string"},
+                                    "description": {"type": "string"},
+                                },
+                                "required": ["from", "to", "type", "start_way", "description"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["characters", "relationships"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    if section == "Scenes":
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_scenes",
+                "description": "Extract first sex scenes, overall sex scenes summary, and relationship evolution.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "first_sex_scenes": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "participants": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "chapter": {"type": "string"},
+                                    "location": {"type": "string"},
+                                    "description": {"type": "string"},
+                                },
+                                "required": ["participants", "chapter", "location", "description"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "sex_scenes": {
+                            "type": "object",
+                            "properties": {
+                                "total_count": {"type": "integer"},
+                                "scenes": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "participants": {
+                                                "type": "array",
+                                                "items": {"type": "string"},
+                                            },
+                                            "chapter": {"type": "string"},
+                                            "location": {"type": "string"},
+                                            "description": {"type": "string"},
+                                        },
+                                        "required": ["participants", "chapter", "location", "description"],
+                                        "additionalProperties": False,
+                                    },
+                                },
+                            },
+                            "required": ["total_count", "scenes"],
+                            "additionalProperties": False,
+                        },
+                        "evolution": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chapter": {"type": "string"},
+                                    "stage": {"type": "string"},
+                                    "description": {"type": "string"},
+                                },
+                                "required": ["chapter", "stage", "description"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["first_sex_scenes", "sex_scenes", "evolution"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    if section == "Thunder":
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_thunderzones",
+                "description": "Extract thunderzones (reader deal-breakers) and a short summary.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "thunderzones": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string"},
+                                    "severity": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "involved_characters": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "chapter_location": {"type": "string"},
+                                    "relationship_context": {"type": "string"},
+                                },
+                                "required": [
+                                    "type",
+                                    "severity",
+                                    "description",
+                                    "involved_characters",
+                                    "chapter_location",
+                                    "relationship_context",
+                                ],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "thunderzone_summary": {"type": "string"},
+                    },
+                    "required": ["thunderzones", "thunderzone_summary"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    return None
 
 
 def call_llm_with_response(
@@ -191,11 +567,197 @@ def call_llm_with_response(
     raise LLMCallError(last_error or "调用失败", last_raw_response)
 
 
-def _call_llm_json(api_url: str, api_key: str, model: str, prompt: str, section: str) -> Dict[str, Any]:
+def call_llm_with_tool_call(
+    api_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    tool: Dict[str, Any],
+    retry_count: int = 3,
+    *,
+    timeout: int = 180,
+    temperature: float = 1.0,
+) -> tuple[Dict[str, Any] | None, str]:
+    last_error = None
+    last_raw_response = ""
+
+    function_name = _stringify((tool.get("function") or {}).get("name"))
+    if not function_name:
+        return None, ""
+
+    for attempt in range(retry_count):
+        try:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+                "stream": False,
+                "tools": [tool],
+                "tool_choice": {"type": "function", "function": {"name": function_name}},
+            }
+
+            response = requests.post(
+                f"{api_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=timeout,
+            )
+
+            if response.status_code == 400:
+                error_text = response.text or ""
+                if "tools" in error_text or "tool_choice" in error_text:
+                    legacy_payload = {
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": temperature,
+                        "stream": False,
+                        "functions": [tool.get("function") or {}],
+                        "function_call": {"name": function_name},
+                    }
+                    response = requests.post(
+                        f"{api_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=legacy_payload,
+                        timeout=timeout,
+                    )
+
+            if response.status_code != 200:
+                last_raw_response = (response.text or "")[:3000]
+                if response.status_code in [502, 503, 504]:
+                    wait_time = 5 * (attempt + 1)
+                    last_error = f"网关超时({response.status_code})"
+                    time.sleep(wait_time)
+                    continue
+                if response.status_code == 429:
+                    wait_time = 5 * (attempt + 1)
+                    last_error = "请求频繁(429)"
+                    time.sleep(wait_time)
+                    continue
+
+                error_msg = f"API错误: {response.status_code}"
+                if response.status_code == 401:
+                    error_msg = "API密钥无效"
+                elif response.status_code == 403:
+                    error_msg = "无权限访问"
+                elif response.status_code == 400:
+                    error_msg = "请求参数错误"
+                elif response.status_code == 421:
+                    error_msg = "内容审核拦截(421)"
+                raise LLMCallError(error_msg, last_raw_response)
+
+            last_raw_response = (response.text or "")[:3000]
+            try:
+                data = response.json()
+            except Exception:
+                raise LLMCallError("返回非JSON", last_raw_response)
+
+            choice = (data.get("choices") or [{}])[0]
+            message = choice.get("message") or {}
+
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list) and tool_calls:
+                for tc in tool_calls:
+                    fn = tc.get("function") or {}
+                    if _stringify(fn.get("name")) != function_name:
+                        continue
+                    args = fn.get("arguments")
+                    if isinstance(args, dict):
+                        return args, last_raw_response
+                    args_str = _stringify(args)
+                    if not args_str:
+                        continue
+                    try:
+                        parsed_args = json.loads(args_str)
+                    except json.JSONDecodeError:
+                        parsed_args = extract_json_from_response(args_str)
+                    if isinstance(parsed_args, dict) and parsed_args:
+                        return parsed_args, last_raw_response
+
+            function_call = message.get("function_call")
+            if isinstance(function_call, dict) and _stringify(function_call.get("name")) == function_name:
+                args = function_call.get("arguments")
+                if isinstance(args, dict):
+                    return args, last_raw_response
+                args_str = _stringify(args)
+                if args_str:
+                    try:
+                        parsed_args = json.loads(args_str)
+                    except json.JSONDecodeError:
+                        parsed_args = extract_json_from_response(args_str)
+                    if isinstance(parsed_args, dict) and parsed_args:
+                        return parsed_args, last_raw_response
+
+            content = _stringify(message.get("content"))
+            parsed_content = extract_json_from_response(content)
+            if parsed_content:
+                return parsed_content, last_raw_response
+
+            return None, last_raw_response
+
+        except requests.exceptions.Timeout:
+            last_error = f"超时({attempt + 1}/{retry_count})"
+            if attempt < retry_count - 1:
+                time.sleep(3)
+                continue
+            raise LLMCallError(last_error, last_raw_response)
+        except LLMCallError:
+            raise
+        except Exception as e:
+            raise LLMCallError(str(e), last_raw_response)
+
+    raise LLMCallError(last_error or "调用失败", last_raw_response)
+
+
+def _call_llm_json(
+    api_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    section: str,
+    *,
+    repair_attempted: bool = False,
+    repair_state: dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     raw_response = ""
+    temperature = 0.2
+    temperature_raw = os.getenv("LLM_TEMPERATURE_STRUCTURED", "").strip()
+    if temperature_raw:
+        try:
+            temperature = float(temperature_raw)
+        except Exception:
+            temperature = 0.2
+    if temperature < 0:
+        temperature = 0.0
+    if temperature > 2:
+        temperature = 2.0
+
+    use_function_calling = os.getenv("LLM_USE_FUNCTION_CALLING", "").strip().lower() in {"1", "true", "yes", "y"}
+    if use_function_calling:
+        tool = _get_function_calling_tool(section)
+        if tool:
+            try:
+                tool_data, _tool_raw = call_llm_with_tool_call(
+                    api_url,
+                    api_key,
+                    model,
+                    prompt,
+                    tool,
+                    temperature=temperature,
+                )
+                if tool_data:
+                    return tool_data
+            except LLMCallError:
+                pass
+
     try:
         content, raw_response = call_llm_with_response(
-            api_url, api_key, model, prompt, temperature=0.7
+            api_url, api_key, model, prompt, temperature=temperature
         )
     except LLMCallError as e:
         detail = f"{section} 调用失败: {e}"
@@ -205,6 +767,23 @@ def _call_llm_json(api_url: str, api_key: str, model: str, prompt: str, section:
 
     data = extract_json_from_response(content)
     if not data:
+        if (not repair_attempted) and _should_repair(section):
+            if repair_state is not None:
+                repair_state["attempted"] = True
+                repair_state["reason"] = "parse"
+            try:
+                return _repair_llm_json(
+                    api_url,
+                    api_key,
+                    model,
+                    prompt,
+                    section,
+                    content or raw_response,
+                    f"{section} 解析失败",
+                    ["返回非JSON或字段缺失"],
+                )
+            except Exception:
+                pass
         detail = f"{section} 解析失败: 返回非JSON或字段缺失"
         if DEBUG and raw_response:
             detail += f"\n\n原始响应:\n{raw_response[:2000]}"
@@ -676,71 +1255,7 @@ def test_connection():
         raise HTTPException(status_code=500, detail=f"连接失败: {str(e)}")
 
 
-@app.post("/api/analyze/meta")
-def analyze_meta(req: AnalyzeContentRequest):
-    """分析小说基础信息 + 剧情总结"""
-    api_url, api_key, model = _get_llm_config()
-
-    prompt = f"""
-You are a professional literary analyst specializing in adult fiction.
-
-## Task
-Extract novel metadata and write a 200-300 Chinese character summary.
-
-## Output JSON ONLY
-- Return ONLY one JSON object. No extra text.
-- Use double quotes for keys/strings.
-- Required keys: novel_info, summary.
-
-### Schema
-{{
-  "novel_info": {{
-    "world_setting": "",
-    "world_tags": [],
-    "chapter_count": 0,
-    "is_completed": false,
-    "completion_note": ""
-  }},
-  "summary": ""
-}}
-
-## Novel Content
-{req.content}
-"""
-
-    data = _call_llm_json(api_url, api_key, model, prompt, "Meta")
-    novel_info, summary, errors = _validate_meta(data)
-    _raise_if_errors(errors, "Meta")
-    return {"analysis": {"novel_info": novel_info, "summary": summary}}
-
-
-@app.post("/api/analyze/core")
-def analyze_core(req: AnalyzeContentRequest):
-    """分析角色 + 关系 + 淫荡指数"""
-    api_url, api_key, model = _get_llm_config()
-
-    prompt = f"""
-As a professional literary analyst specializing in adult fiction, extract ONLY characters who engage in sexual activities and their sexual relationships.
-
-## Requirements
-- Characters: ONLY those with sexual activity.
-- Gender MUST be "male" or "female" (lowercase English). No other values.
-- Include: name, gender, identity, personality, sexual_preferences.
-- For female characters: lewdness_score (1-100 int) and lewdness_analysis (required).
-- First-person narrator ("我") must be included if involved; infer name/alias if possible, else use "我".
-- Map every sexual relationship with from/to/type/start_way/description.
-
-## Output JSON ONLY
-{{
-  "characters": [],
-  "relationships": []
-}}
-
-## Novel Content
-{req.content}
-"""
-
-    data = _call_llm_json(api_url, api_key, model, prompt, "Core")
+def _parse_core_analysis(data: Dict[str, Any]) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[str]]:
     characters, errors = _validate_characters(data.get("characters"))
     if not characters:
         errors.append("characters 为空")
@@ -749,55 +1264,12 @@ As a professional literary analyst specializing in adult fiction, extract ONLY c
         data.get("relationships"), names
     )
     errors.extend(rel_errors)
-    _raise_if_errors(errors, "Core")
-    return {"analysis": {"characters": characters, "relationships": relationships}}
+    return characters, relationships, errors
 
 
-@app.post("/api/analyze/scenes")
-def analyze_scenes(req: AnalyzeScenesRequest):
-    """分析首次场景 + 统计 + 关系发展"""
-    api_url, api_key, model = _get_llm_config()
-
-    characters, char_errors = _validate_characters(req.characters)
-    _raise_if_errors(char_errors, "Scenes 输入角色")
-    names = {c["name"] for c in characters}
-    relationships, rel_errors = _validate_relationships(req.relationships, names)
-    _raise_if_errors(rel_errors, "Scenes 输入关系")
-
-    allowed_names_json = json.dumps([c["name"] for c in characters], ensure_ascii=False)
-    relationships_json = json.dumps(relationships, ensure_ascii=False)
-
-    prompt = f"""
-You are analyzing intimacy scenes and relationship evolution. Use ONLY the provided character names.
-
-### Allowed character names (MUST use exactly):
-{allowed_names_json}
-
-### Known relationships (reference only):
-{relationships_json}
-
-## Output JSON ONLY
-{{
-  "first_sex_scenes": [],
-  "sex_scenes": {{
-    "total_count": 0,
-    "scenes": []
-  }},
-  "evolution": []
-}}
-
-## Rules
-- participants must be from allowed names; do NOT invent new names.
-- chapter/location/description MUST be non-empty strings. If unknown, write "未知" or "未提及".
-- evolution.chapter/stage/description MUST be non-empty strings. If unknown, write "未知" or "未提及".
-- sex_scenes.total_count must be an integer.
-
-## Novel Content
-{req.content}
-"""
-
-    data = _call_llm_json(api_url, api_key, model, prompt, "Scenes")
+def _parse_scenes_analysis(data: Dict[str, Any], names: set[str]) -> tuple[Dict[str, Any], list[str]]:
     errors: list[str] = []
+
     first_scenes, first_errors = _validate_scenes(
         data.get("first_sex_scenes"), "first_sex_scenes", names
     )
@@ -822,13 +1294,126 @@ You are analyzing intimacy scenes and relationship evolution. Use ONLY the provi
 
     evolution, evo_errors = _validate_evolution(data.get("evolution"))
     errors.extend(evo_errors)
+
+    analysis = {
+        "first_sex_scenes": first_scenes,
+        "sex_scenes": {"total_count": total_count, "scenes": sex_scenes},
+        "evolution": evolution,
+    }
+    return analysis, errors
+
+
+def _parse_thunder_analysis(data: Dict[str, Any], names: set[str]) -> tuple[Dict[str, Any], list[str]]:
+    thunderzones, errors = _validate_thunderzones(data.get("thunderzones"), names)
+    summary = _stringify(data.get("thunderzone_summary"))
+    analysis = {"thunderzones": thunderzones, "thunderzone_summary": summary}
+    return analysis, errors
+
+
+@app.post("/api/analyze/meta")
+def analyze_meta(req: AnalyzeContentRequest):
+    """分析小说基础信息 + 剧情总结"""
+    api_url, api_key, model = _get_llm_config()
+
+    content = _prepare_llm_content(req.content, "Meta")
+    prompt = build_meta_prompt(content)
+
+    repair_state: dict[str, Any] = {"attempted": False}
+    data = _call_llm_json(api_url, api_key, model, prompt, "Meta", repair_state=repair_state)
+    novel_info, summary, errors = _validate_meta(data)
+    if errors and (not repair_state.get("attempted")) and _should_repair("Meta"):
+        repair_state["attempted"] = True
+        repair_state["reason"] = "validation"
+        try:
+            data = _repair_llm_json(
+                api_url,
+                api_key,
+                model,
+                prompt,
+                "Meta",
+                data,
+                "Meta 校验失败",
+                errors,
+            )
+            novel_info, summary, errors = _validate_meta(data)
+        except Exception:
+            pass
+    _raise_if_errors(errors, "Meta")
+    return {"analysis": {"novel_info": novel_info, "summary": summary}}
+
+
+@app.post("/api/analyze/core")
+def analyze_core(req: AnalyzeContentRequest):
+    """分析角色 + 关系 + 淫荡指数"""
+    api_url, api_key, model = _get_llm_config()
+
+    content = _prepare_llm_content(req.content, "Core")
+    prompt = build_core_prompt(content)
+
+    repair_state: dict[str, Any] = {"attempted": False}
+    data = _call_llm_json(api_url, api_key, model, prompt, "Core", repair_state=repair_state)
+    characters, relationships, errors = _parse_core_analysis(data)
+    if errors and (not repair_state.get("attempted")) and _should_repair("Core"):
+        repair_state["attempted"] = True
+        repair_state["reason"] = "validation"
+        try:
+            data = _repair_llm_json(
+                api_url,
+                api_key,
+                model,
+                prompt,
+                "Core",
+                data,
+                "Core 校验失败",
+                errors,
+            )
+            characters, relationships, errors = _parse_core_analysis(data)
+        except Exception:
+            pass
+    _raise_if_errors(errors, "Core")
+    return {"analysis": {"characters": characters, "relationships": relationships}}
+
+
+@app.post("/api/analyze/scenes")
+def analyze_scenes(req: AnalyzeScenesRequest):
+    """分析首次场景 + 统计 + 关系发展"""
+    api_url, api_key, model = _get_llm_config()
+
+    characters, char_errors = _validate_characters(req.characters)
+    _raise_if_errors(char_errors, "Scenes 输入角色")
+    names = {c["name"] for c in characters}
+    relationships, rel_errors = _validate_relationships(req.relationships, names)
+    _raise_if_errors(rel_errors, "Scenes 输入关系")
+
+    allowed_names_json = json.dumps([c["name"] for c in characters], ensure_ascii=False)
+    relationships_json = json.dumps(relationships, ensure_ascii=False)
+
+    content = _prepare_llm_content(req.content, "Scenes")
+    prompt = build_scenes_prompt(content, allowed_names_json, relationships_json)
+
+    repair_state: dict[str, Any] = {"attempted": False}
+    data = _call_llm_json(api_url, api_key, model, prompt, "Scenes", repair_state=repair_state)
+    analysis, errors = _parse_scenes_analysis(data, names)
+    if errors and (not repair_state.get("attempted")) and _should_repair("Scenes"):
+        repair_state["attempted"] = True
+        repair_state["reason"] = "validation"
+        try:
+            data = _repair_llm_json(
+                api_url,
+                api_key,
+                model,
+                prompt,
+                "Scenes",
+                data,
+                "Scenes 校验失败",
+                errors,
+            )
+            analysis, errors = _parse_scenes_analysis(data, names)
+        except Exception:
+            pass
     _raise_if_errors(errors, "Scenes")
     return {
-        "analysis": {
-            "first_sex_scenes": first_scenes,
-            "sex_scenes": {"total_count": total_count, "scenes": sex_scenes},
-            "evolution": evolution,
-        }
+        "analysis": analysis
     }
 
 
@@ -846,48 +1431,31 @@ def analyze_thunderzones(req: AnalyzeThunderzonesRequest):
     allowed_names_json = json.dumps([c["name"] for c in characters], ensure_ascii=False)
     relationships_json = json.dumps(relationships, ensure_ascii=False)
 
-    prompt = f"""
-You are detecting thunderzones (reader deal-breakers) in an adult novel. Use ONLY the provided character names.
+    content = _prepare_llm_content(req.content, "Thunder")
+    prompt = build_thunderzones_prompt(content, allowed_names_json, relationships_json)
 
-### Allowed character names (MUST use exactly):
-{allowed_names_json}
-
-### Known relationships (reference only):
-{relationships_json}
-
-## Thunderzone types
-- 绿帽/Cuckold
-- NTR (Netorare)
-- 女性舔狗
-- 恶堕
-- 其他
-
-Severity must be: 高 / 中 / 低.
-
-## Output JSON ONLY
-{{
-  "thunderzones": [],
-  "thunderzone_summary": ""
-}}
-
-## Rules
-- involved_characters must be from allowed names; do NOT invent new names.
-- description MUST be non-empty. If unknown, write "未知" or "未提及".
-- chapter_location is OPTIONAL. If unknown, you can leave it empty.
-- relationship_context can be empty, but if provided must be a string.
-- If no thunderzones, return empty array and a short summary.
-- Use EXACT keys: type, severity, description, involved_characters, chapter_location, relationship_context.
-- If you cannot provide a non-empty description for an item, DO NOT include that item.
-
-## Novel Content
-{req.content}
-"""
-
-    data = _call_llm_json(api_url, api_key, model, prompt, "Thunder")
-    thunderzones, errors = _validate_thunderzones(data.get("thunderzones"), names)
-    summary = _stringify(data.get("thunderzone_summary"))
+    repair_state: dict[str, Any] = {"attempted": False}
+    data = _call_llm_json(api_url, api_key, model, prompt, "Thunder", repair_state=repair_state)
+    analysis, errors = _parse_thunder_analysis(data, names)
+    if errors and (not repair_state.get("attempted")) and _should_repair("Thunder"):
+        repair_state["attempted"] = True
+        repair_state["reason"] = "validation"
+        try:
+            data = _repair_llm_json(
+                api_url,
+                api_key,
+                model,
+                prompt,
+                "Thunder",
+                data,
+                "Thunder 校验失败",
+                errors,
+            )
+            analysis, errors = _parse_thunder_analysis(data, names)
+        except Exception:
+            pass
     _raise_if_errors(errors, "Thunder")
-    return {"analysis": {"thunderzones": thunderzones, "thunderzone_summary": summary}}
+    return {"analysis": analysis}
 
 
 if __name__ == "__main__":

@@ -32,16 +32,16 @@ static/
 
 ### API Endpoints
 
-| Endpoint        | Method | Description |
-| --------------- | ------ | ----------- |
-| `/api/config`   | GET    | Server config (API URL, model name) |
-| `/api/novels`   | GET    | Scan novel directory (recursive `.txt` scan) |
-| `/api/novel/{path}` | GET | Read novel content |
-| `/api/test-connection` | GET | Test LLM API connection |
-| `/api/analyze/meta` | POST | Novel metadata + summary |
-| `/api/analyze/core` | POST | Characters + relationships + lewdness |
-| `/api/analyze/scenes` | POST | First scenes + stats + evolution |
-| `/api/analyze/thunderzones` | POST | Thunderzone detection |
+| Endpoint                    | Method | Description                                  |
+| --------------------------- | ------ | -------------------------------------------- |
+| `/api/config`               | GET    | Server config (API URL, model name)          |
+| `/api/novels`               | GET    | Scan novel directory (recursive `.txt` scan) |
+| `/api/novel/{path}`         | GET    | Read novel content                           |
+| `/api/test-connection`      | GET    | Test LLM API connection                      |
+| `/api/analyze/meta`         | POST   | Novel metadata + summary                     |
+| `/api/analyze/core`         | POST   | Characters + relationships + lewdness        |
+| `/api/analyze/scenes`       | POST   | First scenes + stats + evolution             |
+| `/api/analyze/thunderzones` | POST   | Thunderzone detection                        |
 
 ### Data Flow
 
@@ -70,17 +70,14 @@ static/
   - 30-49: 绿色 (low)
   - <30: 蓝色 (pure)
 
-#### Cross-Entity Reconciliation
-- Auto-add missing characters referenced in relationships/scenes
-- Auto-add missing relationships from sex scenes (pairwise)
-- Deduplicate relationships (undirected pairs)
-- Ensures relationship graph is complete
+#### Cross-Entity Consistency (Fail Fast)
+- Relationships/scenes/thunderzones must reference names present in `characters`
+- Backend validates and returns `HTTP 422` on any mismatch
+- No auto-reconciliation/dedup/auto-add: prefer failing rather than silently producing inconsistent graphs
 
 #### First-Person Narrator Handling
-- Special handling for "我" (I) in Chinese novels
-- Infers name/alias from how others address them; use "我" if no explicit name
-- Infers gender from context (pronouns, how addressed)
-- Narrator is treated as a real character if they participate in sexual activities
+- Prompt-level requirement: include first-person narrator ("我") as a character if involved; infer alias if possible, else use "我"
+- Backend does not auto-infer narrator name/gender; it only normalizes/validates the returned `gender` values
 
 #### Export Report
 - UI入口：分析完成后点击"导出"
@@ -101,11 +98,14 @@ static/
 ### Backend Patterns
 - Config from `.env` via `python-dotenv`
 - Path traversal protection in `_safe_novel_path()`
-- LLM response JSON extraction handles markdown code blocks
+- LLM calls `POST {API_BASE_URL}/chat/completions` (OpenAI-compatible) with `stream=true`
+- Stream parsing: assembles text from `choices[0].delta.content` (or `delta.reasoning_content`)
+- JSON extraction is best-effort (`extract_json_from_response`): raw JSON → ```json code block → brace substring; still fragile to JSON5/truncation
 - `call_llm_with_response()` with retry logic for 502/503/504/429
 - Security middleware: X-Content-Type-Options, Referrer-Policy, X-Frame-Options
 - Strict schema validation per analysis stage (`_validate_characters`, `_validate_relationships`, etc.)
-- No auto-reconciliation; invalid output fails fast
+- No auto-repair: invalid JSON / schema mismatch fails fast (HTTP 422)
+- `DEBUG=true` will include a snippet of raw LLM response for call/parse failures (useful for prompt tuning); schema validation errors only include the validation error list
 
 ### Data Models
 
