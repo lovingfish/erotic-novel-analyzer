@@ -182,31 +182,33 @@
 /* Pill Tab */
 .pill-tabs {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--glass-border);
 }
 .pill-tab {
-  padding: 0.5rem 1rem;
-  border-radius: 2rem;
+  padding: 0.625rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
   border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .pill-tab:hover {
-  background: var(--glass);
   color: oklch(var(--bc));
+  background: var(--glass);
+  border-radius: 0.5rem 0.5rem 0 0;
 }
 .pill-tab.active {
-  background: var(--glass-hover);
-  color: oklch(var(--bc));
+  color: oklch(var(--p));
   font-weight: 600;
+  border-bottom-color: oklch(var(--p));
 }
-[data-theme="light"] .pill-tab.active {
-  background: white;
-  box-shadow: var(--card-shadow);
+.pill-tab.active:hover {
+  background: transparent;
 }
 
 /* 进度列表 */
