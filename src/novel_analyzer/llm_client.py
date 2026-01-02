@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from .config_loader import LLMConfig
 from . import observability
+from . import llm_dumps
 from .prompts import extract_requirements_excerpt, render, truncate_text
 
 
@@ -206,6 +208,127 @@ def _normalize_meta_args(args: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_PARTICIPANTS_SPLIT_RE = re.compile(r"[，,、/+\s]+")
+
+
+def _coerce_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def _normalize_nonempty_str(value: Any, *, default: str) -> str:
+    if isinstance(value, str):
+        s = value.strip()
+        return s if s else default
+    if value is None:
+        return default
+    s = str(value).strip()
+    return s if s else default
+
+
+def _normalize_participants(value: Any) -> list[str]:
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            s = str(item).strip()
+            if s:
+                out.append(s)
+        return out
+
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        parts = [p.strip() for p in _PARTICIPANTS_SPLIT_RE.split(s) if p and p.strip()]
+        return parts
+
+    if value is None:
+        return []
+
+    s = str(value).strip()
+    return [s] if s else []
+
+
+def _normalize_scene_entry(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    return {
+        "participants": _normalize_participants(value.get("participants")),
+        "chapter": _normalize_nonempty_str(value.get("chapter"), default="未知"),
+        "location": _normalize_nonempty_str(value.get("location"), default="未知"),
+        "description": _normalize_nonempty_str(value.get("description"), default="未提及"),
+    }
+
+
+def _normalize_evolution_entry(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    return {
+        "chapter": _normalize_nonempty_str(value.get("chapter"), default="未知"),
+        "stage": _normalize_nonempty_str(value.get("stage"), default="未提及"),
+        "description": _normalize_nonempty_str(value.get("description"), default="未提及"),
+    }
+
+
+def _normalize_sex_scenes(value: Any) -> Any:
+    raw = value
+    if isinstance(raw, str):
+        parsed = _try_parse_json_dict(raw)
+        if parsed is None:
+            return value
+        raw = parsed
+
+    if not isinstance(raw, dict):
+        return value
+
+    raw_scenes = raw.get("scenes")
+    items = _coerce_list(raw_scenes)
+    scenes = [x for x in (_normalize_scene_entry(item) for item in items) if x is not None]
+
+    tc_raw = raw.get("total_count")
+    if tc_raw is None:
+        tc_raw = raw.get("total")
+    if tc_raw is None:
+        tc_raw = raw.get("count")
+
+    try:
+        total_count = int(tc_raw)
+    except Exception:
+        total_count = len(scenes)
+
+    if total_count < 0:
+        total_count = 0
+    if total_count < len(scenes):
+        total_count = len(scenes)
+
+    return {"total_count": total_count, "scenes": scenes}
+
+
+def _normalize_scenes_args(args: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+
+    first_items = _coerce_list(args.get("first_sex_scenes"))
+    out["first_sex_scenes"] = [x for x in (_normalize_scene_entry(item) for item in first_items) if x is not None]
+
+    sex_scenes = _normalize_sex_scenes(args.get("sex_scenes"))
+    if sex_scenes is not None:
+        out["sex_scenes"] = sex_scenes
+
+    evo_items = _coerce_list(args.get("evolution"))
+    out["evolution"] = [x for x in (_normalize_evolution_entry(item) for item in evo_items) if x is not None]
+
+    return out
+
+
 class LLMClient:
     def __init__(self, runtime: LLMRuntime, cfg: LLMConfig):
         self._runtime = runtime
@@ -224,6 +347,7 @@ class LLMClient:
             tool=tool,
             tool_name=sec.tool_name,
             temperature=sec.temperature,
+            stage="primary",
         )
 
         if args is None:
@@ -258,6 +382,7 @@ class LLMClient:
                 tool=tool,
                 tool_name=sec.tool_name,
                 temperature=self._cfg.repair_template.temperature,
+                stage="repair",
             )
 
             if repair_args is None:
@@ -289,6 +414,8 @@ class LLMClient:
     def _normalize_args(self, *, section: str, args: dict[str, Any]) -> dict[str, Any]:
         if section == "meta":
             return _normalize_meta_args(args)
+        if section == "scenes":
+            return _normalize_scenes_args(args)
         return args
 
     def _build_tool(self, *, section: str, output_model: type[BaseModel]) -> dict[str, Any]:
@@ -348,6 +475,7 @@ class LLMClient:
         tool: dict[str, Any],
         tool_name: str,
         temperature: float,
+        stage: str,
     ) -> tuple[dict[str, Any] | None, str]:
         timeout = int(self._cfg.defaults.timeout_seconds)
         retry = self._cfg.defaults.retry
@@ -373,11 +501,28 @@ class LLMClient:
         last_raw = ""
         last_err = ""
         for attempt in range(int(retry.count)):
+            attempt_index = attempt + 1
             try:
                 res = do_request(payload_tools)
             except requests.exceptions.Timeout:
                 last_err = "timeout"
                 wait = _backoff_seconds(retry.backoff, retry.base_wait_seconds, attempt, retry.max_wait_seconds)
+                llm_dumps.write_dump(
+                    section=section,
+                    stage=stage,
+                    attempt=attempt_index,
+                    protocol="tools",
+                    model=self._runtime.model,
+                    tool_name=tool_name,
+                    temperature=float(temperature),
+                    prompt=prompt,
+                    request_payload=payload_tools,
+                    response_status_code=None,
+                    response_text=None,
+                    response_json=None,
+                    extracted_args=None,
+                    note="timeout",
+                )
                 if attempt < int(retry.count) - 1:
                     observability.retry(
                         section=section,
@@ -392,15 +537,42 @@ class LLMClient:
             except requests.RequestException as e:
                 raise LLMClientError(f"{section} 请求失败: {e}")
 
-            last_raw = (res.text or "")[:3000]
+            response_text = res.text or ""
+            last_raw = response_text[:3000]
+
+            response_json: Any | None
+            try:
+                response_json = res.json()
+            except Exception:
+                response_json = None
+            protocol = "tools"
+            request_payload: dict[str, Any] | None = payload_tools
+            protocol_fallback = False
 
             if res.status_code == 400:
-                err_text = res.text or ""
+                err_text = response_text
                 if "tools" in err_text or "tool_choice" in err_text:
                     observability.function_calling_protocol_fallback(
                         section=section,
                         reason="server rejects tools/tool_choice, trying legacy functions/function_call",
                     )
+                    llm_dumps.write_dump(
+                        section=section,
+                        stage=stage,
+                        attempt=attempt_index,
+                        protocol="tools",
+                        model=self._runtime.model,
+                        tool_name=tool_name,
+                        temperature=float(temperature),
+                        prompt=prompt,
+                        request_payload=payload_tools,
+                        response_status_code=int(res.status_code),
+                        response_text=response_text,
+                        response_json=response_json,
+                        extracted_args=None,
+                        note="protocol fallback trigger",
+                    )
+                    protocol_fallback = True
                     legacy_payload = {
                         "model": self._runtime.model,
                         "messages": [{"role": "user", "content": prompt}],
@@ -410,7 +582,47 @@ class LLMClient:
                         "function_call": {"name": tool_name},
                     }
                     res = do_request(legacy_payload)
-                    last_raw = (res.text or "")[:3000]
+                    protocol = "legacy"
+                    request_payload = legacy_payload
+
+                    response_text = res.text or ""
+                    last_raw = response_text[:3000]
+
+                    try:
+                        response_json = res.json()
+                    except Exception:
+                        response_json = None
+
+            extracted_args: dict[str, Any] | None = None
+            notes: list[str] = []
+            if protocol_fallback:
+                notes.append("protocol fallback")
+            if res.status_code != 200:
+                notes.append(f"status {res.status_code}")
+            if response_json is None:
+                notes.append("json parse failed")
+
+            if res.status_code == 200 and isinstance(response_json, dict):
+                extracted_args = self._extract_tool_arguments(response_json, tool_name=tool_name, section=section)
+                if extracted_args is None:
+                    notes.append("tool arguments missing/unparsable")
+
+            llm_dumps.write_dump(
+                section=section,
+                stage=stage,
+                attempt=attempt_index,
+                protocol=protocol,
+                model=self._runtime.model,
+                tool_name=tool_name,
+                temperature=float(temperature),
+                prompt=prompt,
+                request_payload=request_payload,
+                response_status_code=int(res.status_code),
+                response_text=response_text,
+                response_json=response_json,
+                extracted_args=extracted_args,
+                note="; ".join(notes),
+            )
 
             if res.status_code in set(retry.retryable_status_codes):
                 last_err = f"http_{res.status_code}"
@@ -429,12 +641,10 @@ class LLMClient:
             if res.status_code != 200:
                 raise LLMClientError(f"{section} API错误: {res.status_code}", raw_response=last_raw)
 
-            try:
-                data = res.json()
-            except Exception:
+            if not isinstance(response_json, dict):
                 raise LLMClientError(f"{section} 返回非JSON", raw_response=last_raw)
 
-            args = self._extract_tool_arguments(data, tool_name=tool_name, section=section)
+            args = extracted_args
             if args is None:
                 observability.missing_tool_call(section=section, reason="no tool_calls/function_call or unparsable arguments")
                 return None, last_raw

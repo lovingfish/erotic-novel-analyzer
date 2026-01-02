@@ -881,8 +881,21 @@ function buildThunderzonesHtml(analysisData) {
     ? analysisData.thunderzones
     : [];
 
+  const summary = escapeHtml(
+    analysisData?.thunderzone_summary ||
+      (thunderzones.length === 0 ? "未检测到雷点" : "检测到雷点")
+  );
+
+  let html = `
+        <div class="summary-section">
+            <div class="summary-title">雷点概览</div>
+            <p class="summary-content">${summary}</p>
+        </div>
+  `;
+
   if (thunderzones.length === 0) {
-    return buildEmptyStateHtml("shield-check", "未检测到雷点");
+    html += buildEmptyStateHtml("shield-check", "未检测到雷点");
+    return html;
   }
 
   const normalizeSeverity = (value) => {
@@ -927,16 +940,7 @@ function buildThunderzonesHtml(analysisData) {
     低: "badge-info",
   };
 
-  const summary = escapeHtml(analysisData?.thunderzone_summary || "检测到雷点");
-
-  let html = `
-        <div class="summary-section">
-            <div class="summary-title">雷点概览</div>
-            <p class="summary-content">${summary}</p>
-        </div>
-
-        <div class="thunderzone-list">
-    `;
+  html += `<div class="thunderzone-list">`;
 
   for (const thunderzone of sorted) {
     const typeRaw = thunderzone?.type;

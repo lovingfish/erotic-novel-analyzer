@@ -28,6 +28,7 @@ from novel_analyzer.config_loader import load_llm_config
 from novel_analyzer.content_processor import prepare_content
 from novel_analyzer.llm_client import LLMClient, LLMRuntime, LLMClientError
 from novel_analyzer.prompts import render
+from novel_analyzer import llm_dumps
 from novel_analyzer.schemas import (
     MetaOutput,
     CoreOutput,
@@ -169,7 +170,45 @@ async def read_root(request: Request):
 
 @app.get("/api/config")
 def get_server_config():
-    return {"api_url": os.getenv("API_BASE_URL", ""), "model": os.getenv("MODEL_NAME", "")}
+    return {
+        "api_url": os.getenv("API_BASE_URL", ""),
+        "model": os.getenv("MODEL_NAME", ""),
+        "repair_enabled": bool(getattr(LLM_CFG.repair, "enabled", False)),
+        "repair_max_attempts": int(getattr(LLM_CFG.repair, "max_attempts", 0)),
+        "llm_dump_enabled": bool(llm_dumps.enabled()),
+        "llm_dump_dir": str(llm_dumps.dump_dir()),
+    }
+
+
+@app.get("/api/debug/llm-dumps")
+def list_llm_dumps(limit: int = 200):
+    return {
+        "enabled": llm_dumps.enabled(),
+        "dir": str(llm_dumps.dump_dir()),
+        "items": llm_dumps.list_dumps(limit=limit),
+    }
+
+
+@app.get("/api/debug/llm-dumps/{dump_id}")
+def read_llm_dump(dump_id: str):
+    try:
+        data = llm_dumps.read_dump(dump_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="dump 不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取 dump 失败: {e}")
+    return {"dump": data}
+
+
+@app.delete("/api/debug/llm-dumps")
+def clear_llm_dumps():
+    try:
+        deleted = llm_dumps.clear_dumps()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清空失败: {e}")
+    return {"deleted": deleted}
 
 
 @app.get("/api/novels")

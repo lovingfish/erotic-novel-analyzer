@@ -142,9 +142,9 @@
                   class="loading loading-spinner loading-xs"
                   x-show="loading"
                 ></span>
-                <i data-lucide="refresh-cw" class="w-4 h-4" x-show="!loading && analysisComplete"></i>
+                <i data-lucide="refresh-cw" class="w-4 h-4" x-show="!loading && hasAnyResult()"></i>
                 <span
-                  x-text="loading ? '分析中' : (analysisComplete ? '重新分析' : '开始分析')"
+                  x-text="loading ? '分析中' : (hasAnyResult() ? '重新分析' : '开始分析')"
                 ></span>
               </button>
               <button
@@ -163,9 +163,9 @@
             <template x-for="tab in tabs" :key="tab.id">
               <button
                 class="pill-tab"
-                :class="{ 'active': currentTab === tab.id, 'opacity-40 cursor-not-allowed': !analysisComplete && !tab.alwaysEnabled }"
-                :disabled="!analysisComplete && !tab.alwaysEnabled"
-                @click="(analysisComplete || tab.alwaysEnabled) && (currentTab = tab.id)"
+                :class="{ 'active': currentTab === tab.id, 'opacity-40 cursor-not-allowed': !isTabEnabled(tab) }"
+                :disabled="!isTabEnabled(tab)"
+                @click="isTabEnabled(tab) && (currentTab = tab.id)"
               >
                 <span x-text="tab.name"></span>
               </button>
@@ -174,7 +174,7 @@
 
           <!-- Tab内容 -->
           <div class="animate-in">
-            <div class="glass-card p-6 mb-8" x-show="!analysisComplete" x-cloak>
+            <div class="glass-card p-6 mb-8" x-show="!hasAnyResult()" x-cloak>
               <div class="text-sm opacity-60">已选择小说</div>
               <div
                 class="text-lg font-semibold mt-1"
@@ -210,6 +210,14 @@
                         <div class="progress-detail" x-text="step.detail"></div>
                       </div>
                       <div class="progress-status" x-text="statusLabel(step.status)"></div>
+                      <button
+                        class="ml-2 px-3 py-1 rounded-full text-xs font-medium border border-base-300 hover:bg-[var(--glass)] transition disabled:opacity-40 disabled:cursor-not-allowed"
+                        x-show="isStepActionVisible(step.id)"
+                        :disabled="!canRunStep(step.id) || step.status === 'running'"
+                        @click="runSingleStep(step.id)"
+                      >
+                        <span x-text="stepActionLabel(step)"></span>
+                      </button>
                     </div>
                   </template>
                 </div>
@@ -288,6 +296,110 @@
                   class="text-center py-8 opacity-40"
                 >
                   暂无日志
+                </div>
+              </div>
+            </div>
+            <!-- 调试 -->
+            <div x-show="currentTab === 'debug'" x-cloak>
+              <div class="glass-card p-6 mb-6">
+                <div class="card-header mb-3">
+                  <i data-lucide="bug" class="card-icon"></i>
+                  <span class="card-title">LLM 原始调用（落盘）</span>
+                </div>
+                <p class="text-sm opacity-60 leading-relaxed">
+                  用于排查“返回未知 / 雷点为空 / Function Call不规范”等问题。建议在
+                  <code class="px-1 py-0.5 rounded bg-[var(--glass)]">.env</code>
+                  中设置
+                  <code class="px-1 py-0.5 rounded bg-[var(--glass)]">LLM_DUMP_ENABLED=true</code>
+                  （或
+                  <code class="px-1 py-0.5 rounded bg-[var(--glass)]">DEBUG=true</code>）
+                  后重启服务端。
+                </p>
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <button
+                    class="rounded-full px-4 py-2 text-sm font-medium hover:bg-[var(--glass)] transition"
+                    @click="loadLlmDumps()"
+                    :disabled="llmDumpsLoading"
+                  >
+                    <span
+                      class="loading loading-spinner loading-xs"
+                      x-show="llmDumpsLoading"
+                    ></span>
+                    刷新列表
+                  </button>
+                  <button
+                    class="rounded-full px-4 py-2 text-sm font-medium text-error hover:bg-error/10 transition"
+                    @click="clearLlmDumps()"
+                    :disabled="llmDumpsLoading"
+                  >
+                    清空 dumps
+                  </button>
+                  <span class="text-xs opacity-60 flex items-center">
+                    <span class="mr-2">enabled:</span>
+                    <span class="font-mono" x-text="serverConfig.llm_dump_enabled ? 'true' : 'false'"></span>
+                    <span class="mx-2">dir:</span>
+                    <span class="font-mono break-all" x-text="serverConfig.llm_dump_dir || '-'"></span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="glass-card p-6 mb-6">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="card-header !mb-0">
+                    <i data-lucide="file-json" class="card-icon"></i>
+                    <span class="card-title">当前分析结果（合并）</span>
+                  </div>
+                  <button
+                    class="rounded-full px-4 py-2 text-sm font-medium hover:bg-[var(--glass)] transition"
+                    @click="copyText(analysisJson())"
+                  >
+                    复制 JSON
+                  </button>
+                </div>
+                <pre
+                  class="text-xs font-mono whitespace-pre-wrap break-words max-h-[360px] overflow-y-auto opacity-80"
+                  x-text="analysisJson() || '暂无分析结果'"
+                ></pre>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="glass-card p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm font-semibold">dump 列表</span>
+                    <span class="text-xs opacity-60" x-text="llmDumps.length + ' 条'"></span>
+                  </div>
+                  <div class="space-y-2 max-h-[560px] overflow-y-auto">
+                    <template x-for="item in llmDumps" :key="item.id">
+                      <button
+                        class="w-full text-left rounded-xl border border-base-300 bg-base-200/60 px-3 py-2 hover:bg-base-200 transition"
+                        @click="loadLlmDump(item.id)"
+                      >
+                        <div class="text-xs font-mono break-all" x-text="item.id"></div>
+                        <div class="mt-1 text-xs opacity-60">
+                          <span x-text="item.mtime || ''"></span>
+                          <span class="mx-2">·</span>
+                          <span x-text="formatBytes(item.size || 0)"></span>
+                        </div>
+                      </button>
+                    </template>
+                    <div
+                      x-show="llmDumps.length === 0"
+                      class="text-center py-10 opacity-40 text-sm"
+                    >
+                      暂无 dumps（需要启用 LLM_DUMP_ENABLED/DEBUG）
+                    </div>
+                  </div>
+                </div>
+
+                <div class="glass-card p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm font-semibold">dump 详情</span>
+                    <span class="text-xs opacity-60 font-mono break-all" x-text="selectedDumpId || ''"></span>
+                  </div>
+                  <pre
+                    class="text-xs font-mono whitespace-pre-wrap break-words max-h-[560px] overflow-y-auto opacity-80"
+                    x-text="selectedDumpText || '选择左侧一条 dump 查看'"
+                  ></pre>
                 </div>
               </div>
             </div>
@@ -372,22 +484,35 @@
           </p>
         </div>
 
-        <div class="space-y-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <span class="opacity-50">API URL</span>
-            <span
-              class="font-mono text-xs truncate max-w-[200px]"
-              x-text="serverConfig.api_url || '-'"
-            ></span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="opacity-50">MODEL</span>
-            <span
-              class="font-mono text-xs truncate max-w-[200px]"
-              x-text="serverConfig.model || '-'"
-            ></span>
-          </div>
-        </div>
+         <div class="space-y-3 text-sm">
+           <div class="flex items-center justify-between gap-3">
+             <span class="opacity-50">API URL</span>
+             <span
+               class="font-mono text-xs truncate max-w-[200px]"
+               x-text="serverConfig.api_url || '-'"
+             ></span>
+           </div>
+           <div class="flex items-center justify-between gap-3">
+             <span class="opacity-50">MODEL</span>
+             <span
+               class="font-mono text-xs truncate max-w-[200px]"
+               x-text="serverConfig.model || '-'"
+             ></span>
+           </div>
+           <div class="flex items-center justify-between gap-3">
+             <span class="opacity-50">Repair</span>
+             <span class="font-mono text-xs">
+               <span x-text="serverConfig.repair_enabled ? 'enabled' : 'disabled'"></span>
+               <span class="opacity-60" x-show="serverConfig.repair_enabled">
+                 (<span x-text="serverConfig.repair_max_attempts"></span>)
+               </span>
+             </span>
+           </div>
+           <div class="flex items-center justify-between gap-3">
+             <span class="opacity-50">LLM Dump</span>
+             <span class="font-mono text-xs" x-text="serverConfig.llm_dump_enabled ? 'enabled' : 'disabled'"></span>
+           </div>
+         </div>
 
         <div class="flex items-center gap-2 mt-4" x-show="testResult">
           <span
@@ -432,17 +557,28 @@
     <script src="/static/chart-view.js?v=2"></script>
     <script>
       function app() {
-        return {
-          theme: localStorage.getItem("theme") || "dark",
-          settingsOpen: false,
-          serverConfig: { api_url: "", model: "" },
-          selectedNovel: null,
-          currentNovelContent: null,
-          currentNovelLength: 0,
-          currentAnalysis: null,
-          loading: false,
-          analysisComplete: false,
-          errorMsg: "",
+         return {
+           theme: localStorage.getItem("theme") || "dark",
+           settingsOpen: false,
+           serverConfig: {
+             api_url: "",
+             model: "",
+             repair_enabled: false,
+             repair_max_attempts: 0,
+             llm_dump_enabled: false,
+             llm_dump_dir: "",
+           },
+           selectedNovel: null,
+           currentNovelContent: null,
+           currentNovelLength: 0,
+           currentAnalysis: null,
+           coreRevision: 0,
+           sectionRunId: { meta: 0, core: 0, scenes: 0, thunder: 0 },
+           sectionHasResult: { meta: false, core: false, scenes: false, thunder: false },
+           activeRequests: 0,
+           loading: false,
+           analysisComplete: false,
+           errorMsg: "",
           novelTitle: "选择一本小说",
           fileStats: "加载中...",
           currentTab: "pipeline",
@@ -459,24 +595,32 @@
             { id: "count", name: "统计" },
             { id: "progress", name: "发展" },
             { id: "logs", name: "日志", alwaysEnabled: true },
+            { id: "debug", name: "调试", alwaysEnabled: true },
           ],
           logs: [],
           progressSteps: [],
+          llmDumps: [],
+          llmDumpsLoading: false,
+          selectedDumpId: "",
+          selectedDumpText: "",
 
-          init() {
-            this.$watch("theme", (val) => localStorage.setItem("theme", val));
-            this.$watch("currentTab", (val) => {
-              if (val === "relationships" && this.currentAnalysis) {
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() =>
-                    renderRelationshipGraph(
-                      "relationshipChart",
-                      this.currentAnalysis
-                    )
-                  );
-                });
-              }
-            });
+           init() {
+             this.$watch("theme", (val) => localStorage.setItem("theme", val));
+             this.$watch("currentTab", (val) => {
+               if (val === "relationships" && this.currentAnalysis) {
+                 requestAnimationFrame(() => {
+                   requestAnimationFrame(() =>
+                     renderRelationshipGraph(
+                       "relationshipChart",
+                       this.currentAnalysis
+                     )
+                   );
+                 });
+               }
+               if (val === "debug") {
+                 this.loadLlmDumps();
+               }
+             });
             localStorage.removeItem("novel_analyzer_api_url");
             localStorage.removeItem("novel_analyzer_api_key");
             localStorage.removeItem("novel_analyzer_model_name");
@@ -491,30 +635,195 @@
             }
           },
 
-          async loadServerConfig() {
-            try {
-              const res = await fetch("/api/config", { cache: "no-store" });
-              if (!res.ok) return;
-              const data = await res.json();
-              this.serverConfig = {
-                api_url: data.api_url || "",
-                model: data.model || "",
-              };
-            } catch {}
-          },
+           async loadServerConfig() {
+             try {
+               const res = await fetch("/api/config", { cache: "no-store" });
+               if (!res.ok) return;
+               const data = await res.json();
+               this.serverConfig = {
+                 api_url: data.api_url || "",
+                 model: data.model || "",
+                 repair_enabled: !!data.repair_enabled,
+                 repair_max_attempts: Number(data.repair_max_attempts ?? 0),
+                 llm_dump_enabled: !!data.llm_dump_enabled,
+                 llm_dump_dir: data.llm_dump_dir || "",
+               };
+             } catch {}
+           },
 
           toggleTheme() {
             this.theme = this.theme === "dark" ? "light" : "dark";
           },
 
-          formatWordCount(count) {
-            const value = Number(count);
-            if (!Number.isFinite(value) || value <= 0) return "0";
-            return value > 10000 ? (value / 10000).toFixed(1) + "万" : String(value);
-          },
+           formatWordCount(count) {
+             const value = Number(count);
+             if (!Number.isFinite(value) || value <= 0) return "0";
+             return value > 10000 ? (value / 10000).toFixed(1) + "万" : String(value);
+           },
 
-          initProgressSteps() {
-            this.progressSteps = [
+           formatBytes(bytes) {
+             const n = Number(bytes);
+             if (!Number.isFinite(n) || n <= 0) return "0 B";
+             const units = ["B", "KB", "MB", "GB"];
+             let v = n;
+             let i = 0;
+             while (v >= 1024 && i < units.length - 1) {
+               v /= 1024;
+               i += 1;
+             }
+             const text = i === 0 ? String(Math.trunc(v)) : v.toFixed(1);
+             return `${text} ${units[i]}`;
+           },
+
+           detectChapterCount(content) {
+             const text = String(content ?? "");
+             if (!text) return 0;
+
+             const patterns = [
+               /^\s*第\s*([0-9]{1,5}|[一二三四五六七八九十百千两〇零]{1,12})\s*章/gm,
+               /^\s*chapter\s+([0-9]{1,5})/gim,
+             ];
+
+             for (const re of patterns) {
+               const seen = new Set();
+               let match;
+               while ((match = re.exec(text))) {
+                 if (match[1]) seen.add(match[1]);
+               }
+               if (seen.size > 0) return seen.size;
+             }
+             return 0;
+           },
+
+           blankAnalysis() {
+             return {
+               novel_info: {},
+               summary: "",
+               characters: [],
+               relationships: [],
+               first_sex_scenes: [],
+               sex_scenes: { total_count: 0, scenes: [] },
+               evolution: [],
+               thunderzones: [],
+               thunderzone_summary: "",
+             };
+           },
+
+           beginRequest() {
+             this.activeRequests += 1;
+             this.loading = this.activeRequests > 0;
+           },
+
+           endRequest() {
+             this.activeRequests = Math.max(0, this.activeRequests - 1);
+             this.loading = this.activeRequests > 0;
+           },
+
+           getStep(id) {
+             return this.progressSteps.find((s) => s.id === id) || null;
+           },
+
+           getStepStatus(id) {
+             return this.getStep(id)?.status || "idle";
+           },
+
+           isStepDone(id) {
+             return this.getStepStatus(id) === "done";
+           },
+
+           hasAnyResult() {
+             return ["meta", "core", "scenes", "thunder"].some(
+               (id) => !!this.sectionHasResult?.[id]
+             );
+           },
+
+           isAllDone() {
+             return ["meta", "core", "scenes", "thunder"].every(
+               (id) => !!this.sectionHasResult?.[id]
+             );
+           },
+
+           updateAnalysisComplete(opts = {}) {
+             const silent = !!opts.silent;
+             const allDone = this.isAllDone();
+             if (allDone && !this.analysisComplete && !silent) {
+               this.log("success", "分析完成");
+               this.showToast("分析完成", "success");
+             }
+             this.analysisComplete = allDone;
+           },
+
+           isTabEnabled(tab) {
+             if (!tab) return false;
+             if (tab.alwaysEnabled) return true;
+             const id = tab.id;
+             if (id === "characters" || id === "relationships") {
+               return !!this.sectionHasResult.core;
+             }
+             if (id === "firstsex" || id === "count" || id === "progress") {
+               return !!this.sectionHasResult.scenes;
+             }
+             if (id === "thunderzones") {
+               return !!this.sectionHasResult.thunder;
+             }
+             return false;
+           },
+
+           isStepActionVisible(stepId) {
+             return ["meta", "core", "scenes", "thunder"].includes(stepId);
+           },
+
+           stepActionLabel(step) {
+             const status = step?.status || "idle";
+             if (status === "error") return "重试";
+             if (status === "done") return "重跑";
+             return "运行";
+           },
+
+           canRunStep(stepId) {
+             if (!this.currentNovelContent) return false;
+             if (stepId === "meta" || stepId === "core") return true;
+             if (stepId === "scenes" || stepId === "thunder") {
+               return (
+                 !!this.sectionHasResult.core &&
+                 this.getStepStatus("core") !== "running"
+               );
+             }
+             return false;
+           },
+
+           runSingleStep(stepId) {
+             if (stepId === "meta") return this.runMeta();
+             if (stepId === "core") return this.runCore({ autoRunDependents: false });
+             if (stepId === "scenes") return this.runScenes();
+             if (stepId === "thunder") return this.runThunder();
+           },
+
+           invalidateDependentResults(reason = "角色已更新，需要重新分析") {
+             if (!this.currentAnalysis) {
+               this.currentAnalysis = this.blankAnalysis();
+             }
+             this.currentAnalysis.first_sex_scenes = [];
+             this.currentAnalysis.sex_scenes = { total_count: 0, scenes: [] };
+             this.currentAnalysis.evolution = [];
+             this.currentAnalysis.thunderzones = [];
+             this.currentAnalysis.thunderzone_summary = "";
+
+             this.sectionHasResult.scenes = false;
+             this.sectionHasResult.thunder = false;
+             this.setProgress("scenes", "pending", reason);
+             this.setProgress("thunder", "pending", reason);
+             this.updateAnalysisComplete();
+             this.renderAllData(this.currentAnalysis);
+             this.saveAnalysisToStorage(this.currentAnalysis);
+
+             if (["firstsex", "count", "progress", "thunderzones"].includes(this.currentTab)) {
+               this.currentTab = "pipeline";
+             }
+           },
+
+           initProgressSteps() {
+             this.progressSteps = [
               {
                 id: "select",
                 label: "选择小说",
@@ -548,12 +857,6 @@
               {
                 id: "thunder",
                 label: "雷点检测",
-                status: "idle",
-                detail: "等待分析",
-              },
-              {
-                id: "merge",
-                label: "合并渲染",
                 status: "idle",
                 detail: "等待分析",
               },
@@ -603,16 +906,21 @@
             this.initProgressSteps();
           },
 
-          markProgressRestored() {
-            this.initProgressSteps();
-            this.setProgress("select", "done", "已恢复选择");
-            this.setProgress("load", "done", "已恢复内容");
-            this.setProgress("meta", "done", "已恢复");
-            this.setProgress("core", "done", "已恢复");
-            this.setProgress("scenes", "done", "已恢复");
-            this.setProgress("thunder", "done", "已恢复");
-            this.setProgress("merge", "done", "已恢复渲染");
-          },
+           markProgressRestored() {
+             this.initProgressSteps();
+             this.setProgress("select", "done", "已恢复选择");
+             this.setProgress("load", "done", "已恢复内容");
+             this.setProgress("meta", "done", "已恢复");
+             this.setProgress("core", "done", "已恢复");
+             this.setProgress("scenes", "done", "已恢复");
+             this.setProgress("thunder", "done", "已恢复");
+             this.sectionHasResult = {
+               meta: true,
+               core: true,
+               scenes: true,
+               thunder: true,
+             };
+           },
 
           log(level, message, data = null) {
             const now = new Date();
@@ -740,14 +1048,19 @@
             document
               .querySelectorAll(".file-item")
               .forEach((el) => el.classList.remove("bg-primary/20"));
-            element.classList.add("bg-primary/20");
-            this.selectedNovel = { path, name };
-            this.novelTitle = name;
-            this.analysisComplete = false;
-            this.currentAnalysis = null;
-            this.currentNovelContent = null;
-            this.currentNovelLength = 0;
-            localStorage.removeItem("novel_analyzer_data");
+           element.classList.add("bg-primary/20");
+           this.selectedNovel = { path, name };
+           this.novelTitle = name;
+           this.analysisComplete = false;
+           this.currentAnalysis = null;
+           this.coreRevision = 0;
+           this.sectionRunId = { meta: 0, core: 0, scenes: 0, thunder: 0 };
+           this.sectionHasResult = { meta: false, core: false, scenes: false, thunder: false };
+           this.activeRequests = 0;
+           this.loading = false;
+           this.currentNovelContent = null;
+           this.currentNovelLength = 0;
+           localStorage.removeItem("novel_analyzer_data");
             this.clearRenderedResults();
             this.resetProgress();
             this.currentTab = "pipeline";
@@ -776,116 +1089,333 @@
             }
           },
 
-          async postJson(url, payload) {
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-              throw new Error(data.detail || "分析失败");
-            }
-            return data;
-          },
+           async postJson(url, payload) {
+             const res = await fetch(url, {
+               method: "POST",
+               headers: { "Content-Type": "application/json" },
+               body: JSON.stringify(payload),
+             });
+             const data = await res.json();
+             if (!res.ok) {
+               throw new Error(data.detail || "分析失败");
+             }
+             return data;
+           },
 
-          async analyzeNovel() {
-            if (!this.selectedNovel || !this.currentNovelContent) {
-              this.errorMsg = "请先选择一本小说";
-              return;
-            }
+           ensureAnalysisObject() {
+             if (!this.currentAnalysis) {
+               this.currentAnalysis = this.blankAnalysis();
+             }
+           },
 
-            this.errorMsg = "";
-            this.loading = true;
-            this.log("info", `开始分析: ${this.selectedNovel.name}`);
-            this.analysisComplete = false;
-            this.currentAnalysis = null;
-            this.currentTab = "pipeline";
-            this.setProgress("meta", "running", "请求中...");
-            this.setProgress("core", "running", "请求中...");
-            this.setProgress("scenes", "pending", "等待角色结果");
-            this.setProgress("thunder", "pending", "等待角色结果");
-            this.setProgress("merge", "pending", "等待合并");
+           applyAnalysisPatch(patch) {
+             this.ensureAnalysisObject();
+             Object.assign(this.currentAnalysis, patch || {});
+             this.renderAllData(this.currentAnalysis);
+             this.saveAnalysisToStorage(this.currentAnalysis);
+           },
 
-            try {
-              const runStep = async (id, fn) => {
-                try {
-                  const data = await fn();
-                  this.setProgress(id, "done", "已完成");
-                  return data;
-                } catch (e) {
-                  this.setProgress(id, "error", e.message || "失败");
-                  throw e;
-                }
-              };
+           async runMeta() {
+             if (!this.currentNovelContent) return;
+             if (this.getStepStatus("meta") === "running") return;
 
-              const [metaRes, coreRes] = await Promise.all([
-                runStep("meta", () =>
-                  this.postJson("/api/analyze/meta", {
-                    content: this.currentNovelContent,
-                  }).then((data) => data.analysis)
-                ),
-                runStep("core", () =>
-                  this.postJson("/api/analyze/core", {
-                    content: this.currentNovelContent,
-                  }).then((data) => data.analysis)
-                ),
-              ]);
+             const hadResult = !!this.sectionHasResult.meta;
+             const runId = (this.sectionRunId.meta = (this.sectionRunId.meta || 0) + 1);
 
-              this.setProgress("scenes", "running", "请求中...");
-              this.setProgress("thunder", "running", "请求中...");
+             this.setProgress("meta", "running", "请求中...");
+             this.updateAnalysisComplete();
+             this.beginRequest();
+             try {
+               const metaRes = await this.postJson("/api/analyze/meta", {
+                 content: this.currentNovelContent,
+               }).then((data) => data.analysis);
 
-              const [scenesRes, thunderRes] = await Promise.all([
-                runStep("scenes", () =>
-                  this.postJson("/api/analyze/scenes", {
-                    content: this.currentNovelContent,
-                    characters: coreRes.characters,
-                    relationships: coreRes.relationships,
-                  }).then((data) => data.analysis)
-                ),
-                runStep("thunder", () =>
-                  this.postJson("/api/analyze/thunderzones", {
-                    content: this.currentNovelContent,
-                    characters: coreRes.characters,
-                    relationships: coreRes.relationships,
-                  }).then((data) => data.analysis)
-                ),
-              ]);
+               if (runId !== this.sectionRunId.meta) return;
 
-              this.setProgress("merge", "running", "渲染中...");
+               const novelInfo = metaRes?.novel_info ? { ...metaRes.novel_info } : {};
+               const detectedChapters = this.detectChapterCount(this.currentNovelContent);
+               const chapterCountNum = Number(novelInfo.chapter_count);
+               if (
+                 detectedChapters > 0 &&
+                 (!Number.isFinite(chapterCountNum) || chapterCountNum <= 0)
+               ) {
+                 novelInfo.chapter_count = detectedChapters;
+               }
 
-              const analysis = {
-                novel_info: metaRes.novel_info || {},
-                summary: metaRes.summary || "",
-                characters: coreRes.characters || [],
-                relationships: coreRes.relationships || [],
-                first_sex_scenes: scenesRes.first_sex_scenes || [],
-                sex_scenes: scenesRes.sex_scenes || { total_count: 0, scenes: [] },
-                evolution: scenesRes.evolution || [],
-                thunderzones: thunderRes.thunderzones || [],
-                thunderzone_summary: thunderRes.thunderzone_summary || "",
-              };
+               this.setProgress("meta", "done", "已完成");
+               this.sectionHasResult.meta = true;
+               this.applyAnalysisPatch({
+                 novel_info: novelInfo,
+                 summary: metaRes?.summary || "",
+               });
+             } catch (e) {
+               if (runId !== this.sectionRunId.meta) return;
+               const msg = e.message || "失败";
+               if (hadResult) {
+                 this.setProgress("meta", "done", `重跑失败: ${msg}（保留上次结果）`);
+               } else {
+                 this.setProgress("meta", "error", msg);
+                 this.sectionHasResult.meta = false;
+               }
+               this.log("error", "Meta 失败", e.message || String(e));
+             } finally {
+               this.endRequest();
+               this.updateAnalysisComplete();
+             }
+           },
 
-              this.log("success", "分析完成");
-              this.currentAnalysis = analysis;
-              this.saveAnalysisToStorage(analysis);
-              this.renderAllData(analysis);
-              this.analysisComplete = true;
-              this.setProgress("merge", "done", "已完成");
-              this.currentTab = "summary";
-              this.showToast("分析完成", "success");
-            } catch (e) {
-              const errMsg = e.message || "未知错误";
-              this.errorMsg = errMsg;
-              this.setProgress("merge", "error", "失败");
-              this.log("error", "分析失败", {
-                error: errMsg,
-                novel: this.selectedNovel?.name,
-                contentLength: this.currentNovelContent?.length,
-              });
-            }
-            this.loading = false;
-          },
+           async runCore({ autoRunDependents } = { autoRunDependents: false }) {
+             if (!this.currentNovelContent) return;
+             if (this.getStepStatus("core") === "running") return;
+
+             const hadResult = !!this.sectionHasResult.core;
+             const runId = (this.sectionRunId.core = (this.sectionRunId.core || 0) + 1);
+
+             this.setProgress("core", "running", "请求中...");
+             this.updateAnalysisComplete();
+             this.beginRequest();
+             try {
+               const coreRes = await this.postJson("/api/analyze/core", {
+                 content: this.currentNovelContent,
+               }).then((data) => data.analysis);
+
+               if (runId !== this.sectionRunId.core) return;
+
+               this.ensureAnalysisObject();
+               this.currentAnalysis.characters = coreRes?.characters || [];
+               this.currentAnalysis.relationships = coreRes?.relationships || [];
+               this.coreRevision += 1;
+
+               this.setProgress("core", "done", "已完成");
+               this.sectionHasResult.core = true;
+               this.invalidateDependentResults(
+                 autoRunDependents ? "准备分析..." : "角色已更新，需要重新分析"
+               );
+
+               if (autoRunDependents) {
+                 this.runScenes();
+                 this.runThunder();
+               }
+             } catch (e) {
+               if (runId !== this.sectionRunId.core) return;
+               const msg = e.message || "失败";
+               if (hadResult) {
+                 this.setProgress("core", "done", `重跑失败: ${msg}（保留上次结果）`);
+               } else {
+                 this.setProgress("core", "error", msg);
+                 this.sectionHasResult.core = false;
+               }
+               this.log("error", "Core 失败", e.message || String(e));
+             } finally {
+               this.endRequest();
+               this.updateAnalysisComplete();
+             }
+           },
+
+           async runScenes() {
+             if (!this.currentNovelContent) return;
+             if (!this.sectionHasResult.core || this.getStepStatus("core") === "running") {
+               this.setProgress("scenes", "pending", "等待角色结果");
+               return;
+             }
+             if (this.getStepStatus("scenes") === "running") return;
+
+             const hadResult = !!this.sectionHasResult.scenes;
+             const runId = (this.sectionRunId.scenes = (this.sectionRunId.scenes || 0) + 1);
+             const coreRevision = this.coreRevision;
+
+             this.setProgress("scenes", "running", "请求中...");
+             this.updateAnalysisComplete();
+             this.beginRequest();
+             try {
+               const scenesRes = await this.postJson("/api/analyze/scenes", {
+                 content: this.currentNovelContent,
+                 characters: this.currentAnalysis?.characters || [],
+                 relationships: this.currentAnalysis?.relationships || [],
+               }).then((data) => data.analysis);
+
+               if (runId !== this.sectionRunId.scenes) return;
+               if (coreRevision !== this.coreRevision) {
+                 this.setProgress("scenes", "pending", "角色已更新，请重跑");
+                 return;
+               }
+
+               this.setProgress("scenes", "done", "已完成");
+               this.sectionHasResult.scenes = true;
+               this.applyAnalysisPatch({
+                 first_sex_scenes: scenesRes?.first_sex_scenes || [],
+                 sex_scenes: scenesRes?.sex_scenes || { total_count: 0, scenes: [] },
+                 evolution: scenesRes?.evolution || [],
+               });
+             } catch (e) {
+               if (runId !== this.sectionRunId.scenes) return;
+               const msg = e.message || "失败";
+               if (hadResult) {
+                 this.setProgress("scenes", "done", `重跑失败: ${msg}（保留上次结果）`);
+               } else {
+                 this.setProgress("scenes", "error", msg);
+                 this.sectionHasResult.scenes = false;
+               }
+               this.log("error", "Scenes 失败", e.message || String(e));
+             } finally {
+               this.endRequest();
+               this.updateAnalysisComplete();
+             }
+           },
+
+           async runThunder() {
+             if (!this.currentNovelContent) return;
+             if (!this.sectionHasResult.core || this.getStepStatus("core") === "running") {
+               this.setProgress("thunder", "pending", "等待角色结果");
+               return;
+             }
+             if (this.getStepStatus("thunder") === "running") return;
+
+             const hadResult = !!this.sectionHasResult.thunder;
+             const runId = (this.sectionRunId.thunder = (this.sectionRunId.thunder || 0) + 1);
+             const coreRevision = this.coreRevision;
+
+             this.setProgress("thunder", "running", "请求中...");
+             this.updateAnalysisComplete();
+             this.beginRequest();
+             try {
+               const thunderRes = await this.postJson("/api/analyze/thunderzones", {
+                 content: this.currentNovelContent,
+                 characters: this.currentAnalysis?.characters || [],
+                 relationships: this.currentAnalysis?.relationships || [],
+               }).then((data) => data.analysis);
+
+               if (runId !== this.sectionRunId.thunder) return;
+               if (coreRevision !== this.coreRevision) {
+                 this.setProgress("thunder", "pending", "角色已更新，请重跑");
+                 return;
+               }
+
+               this.setProgress("thunder", "done", "已完成");
+               this.sectionHasResult.thunder = true;
+               this.applyAnalysisPatch({
+                 thunderzones: thunderRes?.thunderzones || [],
+                 thunderzone_summary: thunderRes?.thunderzone_summary || "",
+               });
+             } catch (e) {
+               if (runId !== this.sectionRunId.thunder) return;
+               const msg = e.message || "失败";
+               if (hadResult) {
+                 this.setProgress("thunder", "done", `重跑失败: ${msg}（保留上次结果）`);
+               } else {
+                 this.setProgress("thunder", "error", msg);
+                 this.sectionHasResult.thunder = false;
+               }
+               this.log("error", "Thunder 失败", e.message || String(e));
+             } finally {
+               this.endRequest();
+               this.updateAnalysisComplete();
+             }
+           },
+
+           async loadLlmDumps() {
+              this.llmDumpsLoading = true;
+              try {
+                const res = await fetch("/api/debug/llm-dumps?limit=200", {
+                 cache: "no-store",
+               });
+               const data = await res.json();
+               if (!res.ok) {
+                 throw new Error(data.detail || "加载 dumps 失败");
+               }
+               this.llmDumps = Array.isArray(data.items) ? data.items : [];
+             } catch (e) {
+               this.log("error", "加载 dumps 失败", e.message || String(e));
+             }
+             this.llmDumpsLoading = false;
+           },
+
+           async loadLlmDump(id) {
+             this.selectedDumpId = id || "";
+             this.selectedDumpText = "";
+             if (!id) return;
+             try {
+               const res = await fetch(
+                 "/api/debug/llm-dumps/" + encodeURIComponent(id),
+                 { cache: "no-store" }
+               );
+               const data = await res.json();
+               if (!res.ok) {
+                 throw new Error(data.detail || "读取 dump 失败");
+               }
+               this.selectedDumpText = JSON.stringify(data.dump || data, null, 2);
+             } catch (e) {
+               this.selectedDumpText = `读取失败: ${e.message || String(e)}`;
+               this.log("error", "读取 dump 失败", e.message || String(e));
+             }
+           },
+
+           async clearLlmDumps() {
+             this.llmDumpsLoading = true;
+             try {
+               const res = await fetch("/api/debug/llm-dumps", {
+                 method: "DELETE",
+               });
+               const data = await res.json();
+               if (!res.ok) {
+                 throw new Error(data.detail || "清空失败");
+               }
+               this.llmDumps = [];
+               this.selectedDumpId = "";
+               this.selectedDumpText = "";
+               this.showToast(`已清空 ${data.deleted || 0} 条 dumps`, "success");
+             } catch (e) {
+               this.log("error", "清空 dumps 失败", e.message || String(e));
+             }
+             this.llmDumpsLoading = false;
+           },
+
+           analysisJson() {
+             try {
+               return JSON.stringify(this.currentAnalysis || null, null, 2);
+             } catch {
+               return "";
+             }
+           },
+
+           async copyText(text) {
+             const value = String(text ?? "");
+             if (!value) return;
+             try {
+               await navigator.clipboard.writeText(value);
+               this.showToast("已复制", "success");
+             } catch (e) {
+               this.log("error", "复制失败", e.message || String(e));
+             }
+           },
+
+           async analyzeNovel() {
+             if (!this.selectedNovel || !this.currentNovelContent) {
+               this.errorMsg = "请先选择一本小说";
+               return;
+             }
+
+             this.errorMsg = "";
+             this.log("info", `开始分析: ${this.selectedNovel.name}`);
+             this.analysisComplete = false;
+             this.currentTab = "pipeline";
+             this.currentAnalysis = this.blankAnalysis();
+             this.coreRevision = 0;
+             this.sectionRunId = { meta: 0, core: 0, scenes: 0, thunder: 0 };
+             this.sectionHasResult = { meta: false, core: false, scenes: false, thunder: false };
+             localStorage.removeItem("novel_analyzer_data");
+             this.clearRenderedResults();
+             this.renderAllData(this.currentAnalysis);
+
+             this.setProgress("meta", "idle", "等待分析");
+             this.setProgress("core", "idle", "等待分析");
+             this.setProgress("scenes", "pending", "等待角色结果");
+             this.setProgress("thunder", "pending", "等待角色结果");
+             this.updateAnalysisComplete();
+
+             this.runMeta();
+             this.runCore({ autoRunDependents: true });
+           },
 
           renderAllData(data) {
             const chars = data.characters || [];
@@ -939,6 +1469,12 @@
                 JSON.stringify({
                   analysis,
                   novel: this.selectedNovel,
+                  sectionHasResult: this.sectionHasResult,
+                  progress: (this.progressSteps || []).map((s) => ({
+                    id: s.id,
+                    status: s.status,
+                    detail: s.detail,
+                  })),
                   timestamp: Date.now(),
                 })
               );
@@ -952,30 +1488,95 @@
               const saved = localStorage.getItem("novel_analyzer_data");
               if (!saved) return;
               const data = JSON.parse(saved);
-                if (data.analysis && data.novel) {
-                  this.currentAnalysis = data.analysis;
-                  this.selectedNovel = data.novel;
-                  this.novelTitle = data.novel.name;
-                  this.analysisComplete = true;
-                  this.renderAllData(data.analysis);
+              if (!data.analysis || !data.novel) return;
+
+              this.currentAnalysis = data.analysis;
+              this.selectedNovel = data.novel;
+              this.novelTitle = data.novel.name;
+              this.coreRevision = 0;
+              this.sectionRunId = { meta: 0, core: 0, scenes: 0, thunder: 0 };
+              this.sectionHasResult = { meta: false, core: false, scenes: false, thunder: false };
+
+              const progress = Array.isArray(data.progress) ? data.progress : null;
+              this.initProgressSteps();
+              this.setProgress("select", "done", "已恢复选择");
+              this.setProgress("load", "done", "已恢复内容");
+              if (progress) {
+                for (const item of progress) {
+                  if (!item || !item.id) continue;
+                  this.setProgress(item.id, item.status, item.detail);
+                }
+                if (data.sectionHasResult && typeof data.sectionHasResult === "object") {
+                  this.sectionHasResult = {
+                    meta: !!data.sectionHasResult.meta,
+                    core: !!data.sectionHasResult.core,
+                    scenes: !!data.sectionHasResult.scenes,
+                    thunder: !!data.sectionHasResult.thunder,
+                  };
+                } else {
+                  this.sectionHasResult = {
+                    meta: this.getStepStatus("meta") === "done",
+                    core: this.getStepStatus("core") === "done",
+                    scenes: this.getStepStatus("scenes") === "done",
+                    thunder: this.getStepStatus("thunder") === "done",
+                  };
+                }
+              } else {
+                if (data.sectionHasResult && typeof data.sectionHasResult === "object") {
+                  this.sectionHasResult = {
+                    meta: !!data.sectionHasResult.meta,
+                    core: !!data.sectionHasResult.core,
+                    scenes: !!data.sectionHasResult.scenes,
+                    thunder: !!data.sectionHasResult.thunder,
+                  };
+                  this.setProgress(
+                    "meta",
+                    this.sectionHasResult.meta ? "done" : "idle",
+                    this.sectionHasResult.meta ? "已恢复" : "等待分析"
+                  );
+                  this.setProgress(
+                    "core",
+                    this.sectionHasResult.core ? "done" : "idle",
+                    this.sectionHasResult.core ? "已恢复" : "等待分析"
+                  );
+                  this.setProgress(
+                    "scenes",
+                    this.sectionHasResult.scenes ? "done" : "pending",
+                    this.sectionHasResult.scenes ? "已恢复" : "等待分析"
+                  );
+                  this.setProgress(
+                    "thunder",
+                    this.sectionHasResult.thunder ? "done" : "pending",
+                    this.sectionHasResult.thunder ? "已恢复" : "等待分析"
+                  );
+                } else {
                   this.markProgressRestored();
-                  this.currentTab = "summary";
-                  this.showToast("已恢复上次分析结果", "info");
-                  this.log("info", "已恢复上次分析结果");
+                }
               }
+
+              this.updateAnalysisComplete({ silent: true });
+              this.renderAllData(data.analysis);
+              this.currentTab = "summary";
+              this.showToast("已恢复上次分析结果", "info");
+              this.log("info", "已恢复上次分析结果");
             } catch (e) {
               this.log("error", "恢复失败", e.message);
             }
           },
 
-          clearAnalysis() {
-            localStorage.removeItem("novel_analyzer_data");
-            this.currentAnalysis = null;
-            this.selectedNovel = null;
-            this.novelTitle = "选择一本小说";
-            this.analysisComplete = false;
-            this.currentNovelContent = null;
-            this.currentNovelLength = 0;
+           clearAnalysis() {
+             localStorage.removeItem("novel_analyzer_data");
+             this.currentAnalysis = null;
+             this.coreRevision = 0;
+             this.sectionRunId = { meta: 0, core: 0, scenes: 0, thunder: 0 };
+             this.sectionHasResult = { meta: false, core: false, scenes: false, thunder: false };
+             this.activeRequests = 0;
+             this.loading = false;
+             this.selectedNovel = null;
+             this.novelTitle = "选择一本小说";
+             this.analysisComplete = false;
+             this.currentNovelContent = null;
+             this.currentNovelLength = 0;
             this.currentTab = "pipeline";
             this.resetProgress();
             document
