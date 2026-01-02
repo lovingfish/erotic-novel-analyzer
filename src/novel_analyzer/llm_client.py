@@ -100,6 +100,112 @@ def _backoff_seconds(backoff: str, base: float, attempt_index: int, max_wait: fl
     return min(max_wait, max(0.0, float(wait)))
 
 
+def _strip_code_fences(text: str) -> str:
+    s = (text or "").strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if len(lines) < 3:
+        return s
+    if not lines[-1].strip().startswith("```"):
+        return s
+    return "\n".join(lines[1:-1]).strip()
+
+
+def _try_parse_json_dict(text: str) -> dict[str, Any] | None:
+    s = _strip_code_fences(text)
+    if not s:
+        return None
+    try:
+        parsed = json.loads(s)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    left = s.find("{")
+    right = s.rfind("}")
+    if left >= 0 and right > left:
+        candidate = s[left : right + 1]
+        try:
+            parsed2 = json.loads(candidate)
+        except Exception:
+            parsed2 = None
+        if isinstance(parsed2, dict):
+            return parsed2
+
+    return None
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in {"1", "true", "yes", "y", "是", "对"}:
+            return True
+        if s in {"0", "false", "no", "n", "否", "不"}:
+            return False
+    return default
+
+
+def _normalize_meta_args(args: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+
+    summary = args.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        out["summary"] = summary.strip()
+    else:
+        out["summary"] = ""
+
+    raw_info = args.get("novel_info")
+    info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
+
+    world_setting = info.get("world_setting")
+    if isinstance(world_setting, str) and world_setting.strip():
+        ws = world_setting.strip()
+    else:
+        ws = "未知"
+
+    raw_tags = info.get("world_tags")
+    tags: list[str] = []
+    if isinstance(raw_tags, list):
+        for item in raw_tags:
+            if item is None:
+                continue
+            s = str(item).strip()
+            if s:
+                tags.append(s)
+    elif isinstance(raw_tags, str):
+        s = raw_tags.strip()
+        if s:
+            tags = [s]
+
+    chapter_count = info.get("chapter_count")
+    try:
+        cc = int(chapter_count)
+    except Exception:
+        cc = 0
+    if cc < 0:
+        cc = 0
+
+    is_completed = _coerce_bool(info.get("is_completed"), False)
+
+    completion_note = info.get("completion_note")
+    note = completion_note.strip() if isinstance(completion_note, str) else ""
+
+    out["novel_info"] = {
+        "world_setting": ws,
+        "world_tags": tags,
+        "chapter_count": cc,
+        "is_completed": is_completed,
+        "completion_note": note,
+    }
+    return out
+
+
 class LLMClient:
     def __init__(self, runtime: LLMRuntime, cfg: LLMConfig):
         self._runtime = runtime
@@ -124,6 +230,7 @@ class LLMClient:
             validated: T | None = None
             errors = ["未返回 function call arguments 或 arguments 无法解析"]
         else:
+            args = self._normalize_args(section=section, args=args)
             validated, errors = self._validate_args(output_model, args)
 
         if validated is not None:
@@ -159,6 +266,7 @@ class LLMClient:
                 raw = repair_raw
                 continue
 
+            repair_args = self._normalize_args(section=section, args=repair_args)
             validated, repair_errors = self._validate_args(output_model, repair_args)
             raw = repair_raw
             if validated is not None:
@@ -177,6 +285,11 @@ class LLMClient:
             return output_model.model_validate(args), []
         except ValidationError as e:
             return None, _format_validation_errors(e)
+
+    def _normalize_args(self, *, section: str, args: dict[str, Any]) -> dict[str, Any]:
+        if section == "meta":
+            return _normalize_meta_args(args)
+        return args
 
     def _build_tool(self, *, section: str, output_model: type[BaseModel]) -> dict[str, Any]:
         sec = self._cfg.sections[section]
@@ -321,7 +434,7 @@ class LLMClient:
             except Exception:
                 raise LLMClientError(f"{section} 返回非JSON", raw_response=last_raw)
 
-            args = self._extract_tool_arguments(data, tool_name)
+            args = self._extract_tool_arguments(data, tool_name=tool_name, section=section)
             if args is None:
                 observability.missing_tool_call(section=section, reason="no tool_calls/function_call or unparsable arguments")
                 return None, last_raw
@@ -330,7 +443,7 @@ class LLMClient:
 
         raise LLMClientError(f"{section} 调用失败: {last_err}", raw_response=last_raw)
 
-    def _extract_tool_arguments(self, data: dict[str, Any], tool_name: str) -> dict[str, Any] | None:
+    def _extract_tool_arguments(self, data: dict[str, Any], *, tool_name: str, section: str) -> dict[str, Any] | None:
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
 
@@ -346,6 +459,14 @@ class LLMClient:
         fn_call = message.get("function_call")
         if isinstance(fn_call, dict) and str(fn_call.get("name") or "").strip() == tool_name:
             return self._parse_arguments(fn_call.get("arguments"))
+
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            parsed = _try_parse_json_dict(content)
+            if parsed is not None:
+                return parsed
+            if section == "meta":
+                return {"novel_info": {}, "summary": content.strip()}
 
         return None
 

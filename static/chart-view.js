@@ -741,7 +741,7 @@ function buildRelationshipProgressHtml(data) {
             ${data.evolution
               .map(
                 (p, i) => `
-                <div class="progress-item">
+                <div class="timeline-item">
                     <div class="progress-dot ${i === 0 ? "first" : ""}"></div>
                     <div class="progress-content">
                         <div class="progress-chapter">${escapeHtml(
@@ -1082,7 +1082,7 @@ function exportReport(analysis, novelName, opts = {}) {
 .more-scenes { text-align: center; padding: 0.75rem; opacity: 0.6; font-size: 0.875rem; }
 .progress-timeline { position: relative; padding-left: 1.5rem; }
 .progress-timeline::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: oklch(var(--bc) / 0.1); }
-.progress-item { position: relative; padding: 1rem; background: oklch(var(--b2)); border: 1px solid var(--border-color); border-radius: calc(var(--radius) - 0.25rem); margin-bottom: 0.75rem; }
+.timeline-item { position: relative; padding: 1rem; background: oklch(var(--b2)); border: 1px solid var(--border-color); border-radius: calc(var(--radius) - 0.25rem); margin-bottom: 0.75rem; }
 .progress-dot { position: absolute; left: -1.5rem; top: 1.25rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: oklch(var(--p)); border: 2px solid oklch(var(--b1)); }
 .progress-dot.first { background: oklch(var(--er)); width: 1rem; height: 1rem; left: -1.625rem; }
 .progress-chapter { font-size: 0.75rem; opacity: 0.6; margin-bottom: 0.25rem; }

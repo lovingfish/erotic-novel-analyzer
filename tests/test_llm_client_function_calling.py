@@ -171,3 +171,69 @@ def test_function_calling_falls_back_to_legacy_functions(monkeypatch):
     assert len(calls) == 2
     assert "tools" in calls[0]
     assert "functions" in calls[1]
+
+
+def test_meta_normalizes_null_novel_info(monkeypatch):
+    runtime = LLMRuntime(api_url="http://example.com/v1", api_key="sk", model="m")
+    cfg = _make_cfg(repair_enabled=False)
+    client = LLMClient(runtime, cfg)
+
+    bad_args = {"novel_info": None, "summary": "ok"}
+    data = {
+        "choices": [
+            {
+                "message": {
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "extract_meta",
+                                "arguments": json.dumps(bad_args, ensure_ascii=False),
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(200, text=json_module.dumps(data, ensure_ascii=False), json_obj=data)
+
+    import novel_analyzer.llm_client as llm_client_mod
+
+    json_module = json
+    monkeypatch.setattr(llm_client_mod.requests, "post", fake_post)
+
+    out = client.call_section(section="meta", prompt="PROMPT", output_model=MetaOutput)
+    assert out.summary == "ok"
+    assert out.novel_info.world_setting == "未知"
+    assert out.novel_info.is_completed is False
+
+
+def test_meta_falls_back_to_message_content_when_no_tool_calls(monkeypatch):
+    runtime = LLMRuntime(api_url="http://example.com/v1", api_key="sk", model="m")
+    cfg = _make_cfg(repair_enabled=False)
+    client = LLMClient(runtime, cfg)
+
+    data = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "这是摘要",
+                }
+            }
+        ]
+    }
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _FakeResponse(200, text=json_module.dumps(data, ensure_ascii=False), json_obj=data)
+
+    import novel_analyzer.llm_client as llm_client_mod
+
+    json_module = json
+    monkeypatch.setattr(llm_client_mod.requests, "post", fake_post)
+
+    out = client.call_section(section="meta", prompt="PROMPT", output_model=MetaOutput)
+    assert out.summary == "这是摘要"
+    assert out.novel_info.world_setting == "未知"

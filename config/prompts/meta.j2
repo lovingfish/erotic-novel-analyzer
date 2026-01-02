@@ -8,6 +8,19 @@ Extract novel metadata and write a 200-300 Chinese character summary.
 - Fill all required fields.
 - Use Chinese for summary and world_tags.
 - If information is unknown, use "未知" or a best-effort estimate.
+- The tool arguments MUST be a JSON object; "novel_info" MUST be an object, never null.
+
+## Tool arguments format (example)
+{
+  "novel_info": {
+    "world_setting": "现代/古代/架空/未知",
+    "world_tags": ["都市", "校园"],
+    "chapter_count": 0,
+    "is_completed": false,
+    "completion_note": ""
+  },
+  "summary": "200-300字中文摘要"
+}
 
 ## Novel Content
 {{ content }}
