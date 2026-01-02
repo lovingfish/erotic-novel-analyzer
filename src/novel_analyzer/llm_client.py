@@ -163,7 +163,13 @@ def _normalize_meta_args(args: dict[str, Any]) -> dict[str, Any]:
         out["summary"] = ""
 
     raw_info = args.get("novel_info")
-    info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
+    info: dict[str, Any] = {}
+    if isinstance(raw_info, dict):
+        info = raw_info
+    elif isinstance(raw_info, str):
+        parsed = _try_parse_json_dict(raw_info)
+        if isinstance(parsed, dict):
+            info = parsed
 
     world_setting = info.get("world_setting")
     if isinstance(world_setting, str) and world_setting.strip():
