@@ -89,11 +89,21 @@ Pydantic Schema 校验
 - 热重载：`uvicorn backend:app --reload --host 127.0.0.1 --port 6103`
 
 ## 测试
-- 运行测试：`python -m pytest -q`
-- 需要 Playwright：
+
+> 必须在虚拟环境里运行（不要用系统 Python）。
+
+- Windows（本仓库默认使用 `venv/`）：
+  - 进入 venv：`.\venv\Scripts\activate`
+  - 运行测试：`python -m pytest -q`
+
+- 不想 activate 的话，直接用 venv 里的 python：
+  - 单测：`.\venv\Scripts\python.exe -m pytest -q`
+
+- 需要 Playwright（E2E/前端渲染相关测试会用到）：
   ```bash
-  pip install -r requirements-dev.txt
-  python -m playwright install chromium
+  .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+  .\venv\Scripts\python.exe -m playwright install chromium
+  .\venv\Scripts\python.exe -m pytest -q
   ```
 
 ## 目录结构（核心）

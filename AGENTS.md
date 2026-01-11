@@ -53,20 +53,15 @@ Keep changes cohesive: routing in `backend.py`, LLM/validation/config in `src/no
 ## Build, Test, and Development Commands
 
 ### Setup
-- Create venv (optional): `python -m venv venv` then `.\venv\Scripts\activate` (Windows).
-- Install deps: `pip install -r requirements.txt`
-- Install dev deps: `pip install -r requirements-dev.txt`
-
-### Running the Server
-- Run (Windows): `start.bat`
-- Run (manual): `python backend.py`
-- Run with reload (dev): `uvicorn backend:app --reload --host 127.0.0.1 --port 6103`
+- Create venv (recommended): `python -m venv venv` then `.\venv\Scripts\activate` (Windows).
+- Install deps (in venv): `python -m pip install -r requirements.txt`
+- Install dev deps (in venv): `python -m pip install -r requirements-dev.txt`
 
 ### Testing
-- Run all unit tests: `python -m pytest -q`
-- Run all E2E tests: `python -m pytest tests/test_*_e2e.py -q`
-- Run specific test file: `python -m pytest tests/test_thunderzones.py -q`
-- Run with verbose output: `python -m pytest -v`
+- Run all unit tests (in venv): `python -m pytest -q`
+- Run all E2E tests (in venv): `python -m pytest tests/test_*_e2e.py -q`
+- Run specific test file (in venv): `python -m pytest tests/test_thunderzones.py -q`
+- Run with verbose output (in venv): `python -m pytest -v`
 
 ### E2E Test Setup
 ```bash
