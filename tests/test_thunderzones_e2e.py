@@ -65,23 +65,24 @@ def analysis_with_thunderzones(analysis_empty: dict) -> dict:
     return analysis
 
 
+@pytest.fixture(scope="session")
+def sample_novel_path(tmp_path_factory) -> Path:
+    root = tmp_path_factory.mktemp("novels")
+    path = root / "sample.txt"
+    content = "第1章\n" + ("测试内容" * 2500)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 
 @pytest.fixture(scope="session")
 def server_url(tmp_path_factory) -> str:
-    novels_root = tmp_path_factory.mktemp("novels")
-    folder = novels_root / "sample-folder"
-    folder.mkdir(parents=True, exist_ok=True)
-
-    content = "第1章\n" + ("测试内容" * 2500)
-    (folder / "sample.txt").write_text(content, encoding="utf-8")
-
     port = _find_free_port()
     env = os.environ.copy()
     env.update(
         {
             "HOST": "127.0.0.1",
             "PORT": str(port),
-            "NOVEL_PATH": str(novels_root),
             "LOG_LEVEL": "error",
         }
     )
@@ -107,10 +108,14 @@ def server_url(tmp_path_factory) -> str:
             proc.kill()
 
 
-def _select_first_novel(page) -> None:
-    page.locator("[data-testid='novel-dropdown']").click()
-    page.locator(".file-item").first.wait_for(state="visible", timeout=10_000)
-    page.locator(".file-item").first.click()
+def _upload_novel(page, novel_path: Path) -> None:
+    page.locator("[data-testid='novel-file-input']").set_input_files(str(novel_path))
+    page.wait_for_function(
+        """() => {
+        const btn = document.querySelector("[data-testid='analyze-button']");
+        return btn && !btn.disabled;
+    }"""
+    )
 
 
 def _stub_analyze(page, analysis: dict) -> None:
@@ -169,14 +174,14 @@ def _run_analysis(page) -> None:
     page.locator("#toastContainer div:has-text('分析完成')").wait_for(state="visible", timeout=30_000)
 
 
-def test_thunderzone_tab_visible(server_url, analysis_empty):
+def test_thunderzone_tab_visible(server_url, analysis_empty, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
         _stub_analyze(page, analysis_empty)
 
         page.goto(server_url, wait_until="domcontentloaded")
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         page.locator("button:has-text('雷点')").wait_for(state="visible", timeout=10_000)
@@ -184,30 +189,30 @@ def test_thunderzone_tab_visible(server_url, analysis_empty):
         browser.close()
 
 
-def test_thunderzone_empty_state(server_url, analysis_empty):
+def test_thunderzone_empty_state(server_url, analysis_empty, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
         _stub_analyze(page, analysis_empty)
 
         page.goto(server_url, wait_until="domcontentloaded")
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         page.locator("button:has-text('雷点')").click()
         page.locator("#thunderzoneSection").wait_for(state="visible", timeout=10_000)
-        page.locator("#thunderzoneSection").locator("text=未检测到雷点").wait_for(state="visible", timeout=10_000)
+        page.locator("#thunderzoneSection").locator("text=未检测到雷点").first.wait_for(state="visible", timeout=10_000)
         browser.close()
 
 
-def test_thunderzone_display(server_url, analysis_with_thunderzones):
+def test_thunderzone_display(server_url, analysis_with_thunderzones, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
         _stub_analyze(page, analysis_with_thunderzones)
 
         page.goto(server_url, wait_until="domcontentloaded")
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         page.locator("button:has-text('雷点')").click()
@@ -217,25 +222,25 @@ def test_thunderzone_display(server_url, analysis_with_thunderzones):
         browser.close()
 
 
-def test_lewd_elements_empty_state(server_url, analysis_empty):
+def test_lewd_elements_empty_state(server_url, analysis_empty, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
         _stub_analyze(page, analysis_empty)
 
         page.goto(server_url, wait_until="domcontentloaded")
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         page.locator("button:has-text('涩情元素')").click()
         page.locator("#lewdElementsSection").wait_for(state="visible", timeout=10_000)
-        page.locator("#lewdElementsSection").locator("text=未检测到相关元素").wait_for(
+        page.locator("#lewdElementsSection").locator("text=未检测到相关元素").first.wait_for(
             state="visible", timeout=10_000
         )
         browser.close()
 
 
-def test_thunderzone_export(server_url, analysis_with_thunderzones, tmp_path):
+def test_thunderzone_export(server_url, analysis_with_thunderzones, tmp_path, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         context = browser.new_context(accept_downloads=True)
@@ -243,7 +248,7 @@ def test_thunderzone_export(server_url, analysis_with_thunderzones, tmp_path):
         _stub_analyze(page, analysis_with_thunderzones)
 
         page.goto(server_url, wait_until="domcontentloaded")
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         with page.expect_download() as download_info:

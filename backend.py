@@ -52,13 +52,12 @@ DEBUG = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "y"}
 app = FastAPI(
     title="小说分析器",
     description="基于LLM的小说分析工具 - 多角色、多关系、性癖分析",
-    version="3.0.0",
+    version="4.0.0",
 )
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-DEFAULT_NOVEL_PATH = Path(os.getenv("NOVEL_PATH", str(BASE_DIR.parent))).resolve()
 LLM_CFG = load_llm_config(BASE_DIR)
 
 
@@ -138,31 +137,6 @@ def _raise_llm_error(section: str, e: LLMClientError) -> None:
     raise HTTPException(status_code=422, detail=detail)
 
 
-def _safe_novel_path(base_path: Path, user_path: str) -> Path:
-    base = base_path.resolve()
-    raw = (user_path or "").strip()
-    if not raw:
-        raise HTTPException(status_code=400, detail="路径不能为空")
-
-    try:
-        candidate = (base / raw).resolve()
-    except Exception:
-        raise HTTPException(status_code=400, detail="非法路径")
-
-    try:
-        candidate.relative_to(base)
-    except Exception:
-        raise HTTPException(status_code=403, detail="非法路径")
-
-    if candidate.suffix.lower() != ".txt":
-        raise HTTPException(status_code=400, detail="仅支持.txt文件")
-
-    if not candidate.exists() or not candidate.is_file():
-        raise HTTPException(status_code=404, detail="文件不存在")
-
-    return candidate
-
-
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -218,70 +192,6 @@ def clear_llm_dumps():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"清空失败: {e}")
     return {"deleted": deleted}
-
-
-@app.get("/api/novels")
-def scan_novels():
-    """递归扫描所有.txt小说文件"""
-    if not DEFAULT_NOVEL_PATH.exists():
-        raise HTTPException(status_code=400, detail=f"小说目录不存在: {DEFAULT_NOVEL_PATH}（可通过NOVEL_PATH配置）")
-
-    base_path = str(DEFAULT_NOVEL_PATH)
-    exclude_keywords = {
-        "venv",
-        "__pycache__",
-        ".git",
-        "node_modules",
-        "pip",
-        "site-packages",
-        "dist-info",
-        ".tox",
-        ".eggs",
-        "novel-analyzer",
-    }
-
-    novels = []
-
-    for root, dirs, files in os.walk(base_path):
-        dirs[:] = [d for d in dirs if d not in exclude_keywords]
-
-        folder_name = os.path.basename(root)
-        if root == base_path:
-            continue
-
-        root_lower = root.lower()
-        if any(keyword in root_lower for keyword in exclude_keywords):
-            continue
-
-        txt_files = []
-        for f in files:
-            if f.endswith(".txt") and not f.startswith("."):
-                full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, base_path)
-                txt_files.append({"name": f, "path": rel_path, "size": os.path.getsize(full_path)})
-
-        if txt_files:
-            novels.append(
-                {
-                    "folder": folder_name,
-                    "path": folder_name,
-                    "files": sorted(txt_files, key=lambda x: x["name"]),
-                }
-            )
-
-    return {"novels": novels, "total": sum(len(n["files"]) for n in novels)}
-
-
-@app.get("/api/novel/{path:path}")
-def read_novel(path: str):
-    """读取指定小说内容"""
-    full_path = _safe_novel_path(DEFAULT_NOVEL_PATH, path)
-
-    try:
-        content = full_path.read_text(encoding="utf-8", errors="ignore")
-        return {"name": full_path.name, "path": str(Path(path).as_posix()), "content": content, "length": len(content)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"读取失败: {str(e)}")
 
 
 @app.get("/api/test-connection")
@@ -534,4 +444,3 @@ if __name__ == "__main__":
     display_host = "localhost" if host in {"0.0.0.0", "::"} else host
     print(f"\n  ➜  Local:   http://{display_host}:{port}\n")
     uvicorn.run(app, host=host, port=port, log_level=log_level)
-

@@ -4,7 +4,7 @@
 
 ## 关键设计（先讲结论）
 - **配置分层**
-  - `.env`：只放 **secrets / 环境路径 / 服务监听**
+  - `.env`：只放 **secrets / 服务监听 / 调试开关**
   - `config/llm.yaml`：只放 **LLM 策略**（温度/截断/retry/repair）——**固定只读此文件**
   - `config/prompts/*.j2`：Prompt 模板（Jinja2）
 - **结构化输出强制**：仅使用 **Function Calling** 返回的 `tool_calls[].function.arguments`（不再做“文本里正则抽 JSON”）
@@ -25,6 +25,8 @@ start.bat
 
 启动后访问：`http://127.0.0.1:6103`
 
+在页面左上角点击“选择文件...”导入本地 `.txt`（默认自动识别 UTF-8/GB18030，乱码时可手动切换编码）。
+
 ## 配置
 
 ### 1) 服务端 `.env`（必填）
@@ -34,7 +36,6 @@ start.bat
 API_BASE_URL=https://your-api.com/v1
 API_KEY=sk-your-api-key
 MODEL_NAME=gpt-4o
-NOVEL_PATH=X:\Gallery\h小说
 HOST=127.0.0.1
 PORT=6103
 LOG_LEVEL=warning
@@ -75,8 +76,6 @@ Pydantic Schema 校验
 
 ## API 端点
 - `/api/config` (GET) 获取服务端配置（只读）
-- `/api/novels` (GET) 扫描小说目录
-- `/api/novel/{path}` (GET) 读取指定小说内容
 - `/api/test-connection` (GET) 测试 API 连接 + Function Calling 是否可用
 - `/api/analyze/meta` (POST) 基础信息 + 剧情总结
 - `/api/analyze/core` (POST) 角色 + 关系 + 淫荡指数

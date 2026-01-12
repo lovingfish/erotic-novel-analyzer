@@ -2,6 +2,19 @@
 
 本文件记录 LLM 交互链路的鲁棒性演进与关键架构变更。
 
+## [4.0.0] - 2026-01-12
+
+#### 破坏性变更
+- 小说输入改为前端本地文件导入：不再扫描目录/按路径读取本地文件
+- 移除 `/api/novels`、`/api/novel/{path}`、`NOVEL_PATH`、`_safe_novel_path()`
+
+#### 前端
+- 新增“选择文件”入口，支持 UTF-8/GB18030 自动识别，且可手动切换编码
+
+#### 测试与文档
+- E2E 流程改为“上传文件→分析”
+- 文档移除旧接口与 `NOVEL_PATH` 配置
+
 ## [3.0.0] - 2025-12-28
 
 ### b1：彻底重构（强制 Function Calling + Pydantic Schema + 固定 YAML 配置）
@@ -181,7 +194,6 @@
 - `API_BASE_URL`
 - `API_KEY`
 - `MODEL_NAME`
-- `NOVEL_PATH`
 - `HOST` / `PORT`
 - `LOG_LEVEL` / `DEBUG`
 

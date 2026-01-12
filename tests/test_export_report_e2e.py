@@ -46,21 +46,22 @@ def analysis_empty() -> dict:
 
 
 @pytest.fixture(scope="session")
-def server_url(tmp_path_factory) -> str:
-    novels_root = tmp_path_factory.mktemp("novels")
-    folder = novels_root / "sample-folder"
-    folder.mkdir(parents=True, exist_ok=True)
-
+def sample_novel_path(tmp_path_factory) -> Path:
+    root = tmp_path_factory.mktemp("novels")
+    path = root / "sample.txt"
     content = "第1章\n" + ("测试内容" * 2500)
-    (folder / "sample.txt").write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8")
+    return path
 
+
+@pytest.fixture(scope="session")
+def server_url(tmp_path_factory) -> str:
     port = _find_free_port()
     env = os.environ.copy()
     env.update(
         {
             "HOST": "127.0.0.1",
             "PORT": str(port),
-            "NOVEL_PATH": str(novels_root),
             "LOG_LEVEL": "error",
         }
     )
@@ -86,10 +87,14 @@ def server_url(tmp_path_factory) -> str:
             proc.kill()
 
 
-def _select_first_novel(page) -> None:
-    page.locator("[data-testid='novel-dropdown']").click()
-    page.locator(".file-item").first.wait_for(state="visible", timeout=10_000)
-    page.locator(".file-item").first.click()
+def _upload_novel(page, novel_path: Path) -> None:
+    page.locator("[data-testid='novel-file-input']").set_input_files(str(novel_path))
+    page.wait_for_function(
+        """() => {
+        const btn = document.querySelector("[data-testid='analyze-button']");
+        return btn && !btn.disabled;
+    }"""
+    )
 
 
 def _stub_analyze(page, analysis: dict) -> None:
@@ -178,7 +183,7 @@ def _assert_export_cdn_links(export_html_text: str) -> None:
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
-def test_export_report_matches_web_ui(server_url, analysis_full, tmp_path, theme: str):
+def test_export_report_matches_web_ui(server_url, analysis_full, tmp_path, sample_novel_path, theme: str):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         context = browser.new_context(accept_downloads=True)
@@ -186,13 +191,15 @@ def test_export_report_matches_web_ui(server_url, analysis_full, tmp_path, theme
         page = context.new_page()
         _stub_analyze(page, analysis_full)
 
+        if theme == "light":
+            page.add_init_script("localStorage.setItem('theme', 'light');")
+
         page.goto(server_url, wait_until="domcontentloaded")
 
         if theme == "light":
-            page.locator("button[title='切换主题']").click()
             page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'light'")
 
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         page.locator("#relationshipSummary .summary-section").wait_for(state="attached", timeout=10_000)
@@ -246,7 +253,7 @@ def test_export_report_matches_web_ui(server_url, analysis_full, tmp_path, theme
         browser.close()
 
 
-def test_empty_state_is_safe_to_export(server_url, analysis_empty, tmp_path):
+def test_empty_state_is_safe_to_export(server_url, analysis_empty, tmp_path, sample_novel_path):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         context = browser.new_context(accept_downloads=True)
@@ -255,7 +262,7 @@ def test_empty_state_is_safe_to_export(server_url, analysis_empty, tmp_path):
         _stub_analyze(page, analysis_empty)
         page.goto(server_url, wait_until="domcontentloaded")
 
-        _select_first_novel(page)
+        _upload_novel(page, sample_novel_path)
         _run_analysis(page)
 
         with page.expect_download() as download_info:

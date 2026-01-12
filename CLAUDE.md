@@ -58,8 +58,6 @@ static/                    # CSS + client-side rendering (chart-view.js)
 ### API Endpoints
 
 - `/api/config` (GET) Server config (API URL, model name)
-- `/api/novels` (GET) Scan novel directory (recursive `.txt` scan)
-- `/api/novel/{path}` (GET) Read novel content
 - `/api/test-connection` (GET) Test LLM API connection + Function Calling support
 - `/api/analyze/meta` (POST) Novel metadata + summary
 - `/api/analyze/core` (POST) Characters + relationships + lewdness
@@ -68,11 +66,10 @@ static/                    # CSS + client-side rendering (chart-view.js)
 
 ### Data Flow
 
-1. `scanNovels()` → `GET /api/novels` → renders dropdown
-2. `selectNovel()` → `GET /api/novel/{path}` → loads content
-3. `analyzeNovel()` → `POST /api/analyze/meta` + `POST /api/analyze/core` (parallel)
-4. `analyzeNovel()` → `POST /api/analyze/scenes` + `POST /api/analyze/thunderzones` (parallel, with角色/关系名单)
-5. Merge results → `renderAllData()`
+1. `onNovelFileChange()` → 浏览器读取本地 `.txt`（UTF-8/GB18030 自动识别，可手动切换）→ 写入 `currentNovelContent`
+2. `analyzeNovel()` → `POST /api/analyze/meta` + `POST /api/analyze/core` (parallel)
+3. `analyzeNovel()` → `POST /api/analyze/scenes` + `POST /api/analyze/thunderzones` (parallel, with角色/关系名单)
+4. Merge results → `renderAllData()`
 
 ## Backend Design (v3)
 
@@ -80,7 +77,6 @@ static/                    # CSS + client-side rendering (chart-view.js)
 
 - `.env` (not committed): secrets / environment-specific settings only
   - `API_BASE_URL`, `API_KEY`, `MODEL_NAME`
-  - `NOVEL_PATH`
   - `HOST`, `PORT`, `LOG_LEVEL`, `DEBUG`
 - `config/llm.yaml` (committed): **LLM strategy only**
   - per-section temperature

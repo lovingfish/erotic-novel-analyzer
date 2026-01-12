@@ -95,48 +95,43 @@
         <div class="animate-in">
           <!-- 顶部：小说名 + 操作 -->
           <div class="flex items-center justify-between mb-8">
-            <div class="dropdown dropdown-bottom">
-              <div
-                tabindex="0"
-                role="button"
-                data-testid="novel-dropdown"
-                class="float-input flex items-center gap-3 cursor-pointer"
+            <div class="flex items-center gap-3 min-w-0">
+              <input
+                class="hidden"
+                type="file"
+                accept=".txt,text/plain"
+                x-ref="novelFileInput"
+                data-testid="novel-file-input"
+                @change="onNovelFileChange($event)"
+              />
+              <button
+                type="button"
+                class="float-input flex items-center gap-3 cursor-pointer min-w-0"
+                data-testid="novel-file-button"
+                @click="$refs.novelFileInput?.click()"
               >
-                <span
-                  x-text="selectedNovel ? selectedNovel.name : '选择小说...'"
-                  >选择小说...</span
-                >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 opacity-40"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </div>
-              <div
-                tabindex="0"
-                class="dropdown-content z-50 bg-base-200 rounded-xl shadow-2xl w-72 max-h-80 overflow-y-auto mt-2"
+                <i data-lucide="upload" class="w-4 h-4 opacity-50"></i>
+                <span class="truncate" x-text="selectedNovel ? selectedNovel.name : '选择文件...'">选择文件...</span>
+              </button>
+              <select
+                class="select select-sm rounded-full bg-base-200 border-base-300"
+                x-model="fileEncodingMode"
+                title="编码"
+                x-show="selectedNovel"
+                x-cloak
+                data-testid="encoding-select"
               >
-                <div class="p-3 text-xs opacity-50" x-text="fileStats">
-                  加载中...
-                </div>
-                <div id="folderList2" class="p-2 space-y-1"></div>
-              </div>
+                <option value="auto">编码：自动</option>
+                <option value="utf-8">编码：UTF-8</option>
+                <option value="gb18030">编码：GB18030</option>
+              </select>
             </div>
             <div class="flex items-center gap-2">
               <button
                 class="px-4 py-2 rounded-full bg-[#7c3aed] text-white text-sm font-medium transition-all hover:bg-[#6d28d9] flex items-center gap-2"
                 data-testid="analyze-button"
                 @click="analyzeNovel()"
-                :disabled="!selectedNovel || loading"
+                :disabled="!selectedNovel || !currentNovelContent || loading"
               >
                 <span
                   class="loading loading-spinner loading-xs"
@@ -175,7 +170,7 @@
           <!-- Tab内容 -->
           <div class="animate-in">
             <div class="glass-card p-6 mb-8" x-show="currentTab === 'pipeline' && !hasAnyResult()" x-cloak>
-              <div class="text-sm opacity-60">已选择小说</div>
+              <div class="text-sm opacity-60">已导入文件</div>
               <div
                 class="text-lg font-semibold mt-1"
                 x-text="selectedNovel ? selectedNovel.name : '未选择'"
@@ -589,8 +584,10 @@
           loading: false,
           analysisComplete: false,
           errorMsg: "",
-          novelTitle: "选择一本小说",
-          fileStats: "加载中...",
+          novelTitle: "选择文件",
+          selectedFile: null,
+          fileEncodingMode: "auto",
+          detectedEncoding: "",
           currentTab: "pipeline",
           testResult: "",
           testResultMsg: "",
@@ -632,11 +629,15 @@
                  this.loadLlmDumps();
                }
              });
+             this.$watch("fileEncodingMode", () => {
+               if (this.selectedFile) {
+                 this.reloadSelectedFile();
+               }
+             });
             localStorage.removeItem("novel_analyzer_api_url");
             localStorage.removeItem("novel_analyzer_api_key");
             localStorage.removeItem("novel_analyzer_model_name");
             this.loadServerConfig();
-            this.scanNovels();
             this.initProgressSteps();
             this.restoreAnalysis();
             this.log("info", "应用初始化完成");
@@ -856,13 +857,13 @@
             this.progressSteps = [
              {
                id: "select",
-               label: "选择小说",
+               label: "选择文件",
                status: "idle",
-               detail: "等待选择小说",
+               detail: "等待选择文件",
              },
              {
                id: "load",
-               label: "读取小说",
+               label: "读取文件",
                status: "idle",
                detail: "等待读取",
              },
@@ -945,7 +946,7 @@
            markProgressRestored() {
              this.initProgressSteps();
              this.setProgress("select", "done", "已恢复选择");
-             this.setProgress("load", "done", "已恢复内容");
+             this.setProgress("load", "pending", "需重新导入文件以重新分析");
              this.setProgress("meta", "done", "已恢复");
              this.setProgress("core", "done", "已恢复");
               this.setProgress("scenes", "done", "已恢复");
@@ -1034,61 +1035,18 @@
             this.testLoading = false;
           },
 
-          async scanNovels() {
-            this.log("info", "扫描小说目录...");
-            try {
-              const res = await fetch("/api/novels");
-              const data = await res.json();
-              this.fileStats = `${data.total} 本小说`;
-              this.log("success", `扫描完成，找到 ${data.total} 本小说`);
-              this.renderFolderList(data.novels);
-            } catch (e) {
-              this.fileStats = "扫描失败";
-              this.log("error", "扫描失败", e.message);
-            }
-          },
+           async onNovelFileChange(event) {
+             const input = event?.target;
+             const file =
+               input && input.files && input.files[0] ? input.files[0] : null;
+             if (input) input.value = "";
+             if (!file) return;
+             await this.importNovelFile(file);
+           },
 
-          renderFolderList(novels) {
-            const container = document.getElementById("folderList2");
-            if (!container) return;
-            container.replaceChildren();
-
-            const frag = document.createDocumentFragment();
-            (novels || []).forEach((folder) => {
-              const folderDiv = document.createElement("div");
-              folderDiv.className = "mb-2";
-
-              const folderLabel = document.createElement("div");
-              folderLabel.className = "text-xs opacity-40 px-3 py-1";
-              folderLabel.textContent = folder.folder || "";
-              folderDiv.appendChild(folderLabel);
-
-              (folder.files || []).forEach((file) => {
-                const item = document.createElement("div");
-                item.className =
-                  "px-3 py-2.5 rounded-lg cursor-pointer hover:bg-[var(--glass)] text-sm truncate file-item transition-colors";
-                item.dataset.path = String(file.path ?? "");
-                item.dataset.name = String(file.name ?? "");
-                item.textContent = String(file.name ?? "");
-                item.addEventListener("click", () => {
-                  this.selectNovel(item.dataset.path, item.dataset.name, item);
-                  document.activeElement?.blur();
-                });
-                folderDiv.appendChild(item);
-              });
-
-              frag.appendChild(folderDiv);
-            });
-            container.appendChild(frag);
-          },
-
-           async selectNovel(path, name, element) {
-             document
-               .querySelectorAll(".file-item")
-               .forEach((el) => el.classList.remove("bg-primary/20"));
-             element.classList.add("bg-primary/20");
-             this.selectedNovel = { path, name };
-             this.novelTitle = name;
+           prepareForNewNovel(name) {
+             this.selectedNovel = { name: String(name ?? "") };
+             this.novelTitle = this.selectedNovel.name || "未命名";
              this.analysisComplete = false;
              this.currentAnalysis = null;
              this.coreRevision = 0;
@@ -1109,30 +1067,131 @@
              this.resetProgress();
              this.currentTab = "pipeline";
              this.errorMsg = "";
-             this.log("info", `选择小说: ${name}`);
-             this.setProgress("select", "done", `已选择：${name}`);
-             this.setProgress("load", "running", "读取小说中...");
+             this.detectedEncoding = "";
+             this.setProgress("select", "done", `已选择：${this.novelTitle}`);
+             this.setProgress("load", "idle", "等待读取");
+           },
 
+           async importNovelFile(file) {
+             if (!file) return;
+             const name = String(file.name ?? "");
+             if (!name.toLowerCase().endsWith(".txt")) {
+               this.showToast("仅支持 .txt 文件", "error");
+               this.log("error", "导入失败：仅支持 .txt 文件", name);
+               return;
+             }
 
-            try {
-              const res = await fetch(`/api/novel/${encodeURIComponent(path)}`);
-              const data = await res.json();
-              this.currentNovelContent = data.content;
-              this.currentNovelLength = data.length;
-              this.setProgress(
-                "load",
-                "done",
-                `字数：${this.formatWordCount(data.length)}字`
-              );
-              this.log("success", `小说加载成功，字数: ${data.length}`);
-            } catch (e) {
-              this.errorMsg = "读取小说失败: " + e.message;
-              this.currentNovelContent = null;
-              this.currentNovelLength = 0;
-              this.setProgress("load", "error", "读取失败");
-              this.log("error", "读取失败", e.message);
-            }
-          },
+             this.selectedFile = file;
+             this.prepareForNewNovel(name);
+             this.log("info", `导入文件: ${name}`);
+             this.setProgress("load", "running", "读取文件中...");
+
+             try {
+               const decoded = await this.decodeTextFile(file, this.fileEncodingMode);
+               this.detectedEncoding = decoded.encoding || "";
+               this.currentNovelContent = decoded.text || "";
+               this.currentNovelLength = this.currentNovelContent.length;
+               this.setProgress(
+                 "load",
+                 "done",
+                 `字数：${this.formatWordCount(this.currentNovelLength)}字${
+                   this.detectedEncoding ? `（${this.detectedEncoding}）` : ""
+                 }`
+               );
+               this.log(
+                 "success",
+                 `文件读取成功，字数: ${this.currentNovelLength}${
+                   this.detectedEncoding ? `，编码: ${this.detectedEncoding}` : ""
+                 }`
+               );
+             } catch (e) {
+               const msg = e?.message || String(e);
+               this.errorMsg = "读取文件失败: " + msg;
+               this.currentNovelContent = null;
+               this.currentNovelLength = 0;
+               this.setProgress("load", "error", "读取失败");
+               this.log("error", "读取失败", msg);
+             }
+           },
+
+           async reloadSelectedFile() {
+             if (!this.selectedFile) return;
+             const name = String(this.selectedFile.name ?? "");
+             if (!name) return;
+             await this.importNovelFile(this.selectedFile);
+           },
+
+           _detectBom(bytes) {
+             if (!bytes || bytes.length < 2) return null;
+             if (
+               bytes.length >= 3 &&
+               bytes[0] === 0xef &&
+               bytes[1] === 0xbb &&
+               bytes[2] === 0xbf
+             ) {
+               return { encoding: "utf-8", offset: 3 };
+             }
+             if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+               return { encoding: "utf-16le", offset: 2 };
+             }
+             if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+               return { encoding: "utf-16be", offset: 2 };
+             }
+             return null;
+           },
+
+           _decodeBytes(bytes, encoding, options = {}) {
+             const opts = {
+               fatal: !!options.fatal,
+             };
+             const decoder = new TextDecoder(encoding, opts);
+             return decoder.decode(bytes);
+           },
+
+           async decodeTextFile(file, mode = "auto") {
+             const buf = await file.arrayBuffer();
+             const bytes = new Uint8Array(buf);
+             const bom = this._detectBom(bytes);
+             if (bom && bom.encoding) {
+               return {
+                 text: this._decodeBytes(bytes.subarray(bom.offset), bom.encoding),
+                 encoding: bom.encoding,
+               };
+             }
+
+             const normalized = String(mode || "auto").toLowerCase();
+
+             const tryDecode = (encoding, { fatal = false } = {}) => {
+               try {
+                 const text = this._decodeBytes(bytes, encoding, { fatal });
+                 return { text, encoding };
+               } catch {
+                 return null;
+               }
+             };
+
+             if (normalized === "utf-8") {
+               const out = tryDecode("utf-8");
+               if (out) return out;
+               throw new Error("当前浏览器无法使用 UTF-8 解码该文件");
+             }
+             if (normalized === "gb18030") {
+               const out = tryDecode("gb18030") || tryDecode("gbk");
+               if (out) return out;
+               throw new Error("当前浏览器不支持 GB18030/GBK 解码");
+             }
+
+             const utf8Strict = tryDecode("utf-8", { fatal: true });
+             if (utf8Strict) return utf8Strict;
+
+             const gb18030 = tryDecode("gb18030") || tryDecode("gbk");
+             if (gb18030) return gb18030;
+
+             const utf8Loose = tryDecode("utf-8");
+             if (utf8Loose) return utf8Loose;
+
+             throw new Error("无法解码该文件，请尝试切换编码或更换浏览器");
+           },
 
            async postJson(url, payload) {
              const res = await fetch(url, {
@@ -1487,9 +1546,9 @@
              }
            },
 
-            async analyzeNovel() {
+           async analyzeNovel() {
               if (!this.selectedNovel || !this.currentNovelContent) {
-                this.errorMsg = "请先选择一本小说";
+                this.errorMsg = "请先导入小说文件";
                 return;
               }
 
@@ -1608,7 +1667,7 @@
               const progress = Array.isArray(data.progress) ? data.progress : null;
               this.initProgressSteps();
               this.setProgress("select", "done", "已恢复选择");
-              this.setProgress("load", "done", "已恢复内容");
+              this.setProgress("load", "pending", "需重新导入文件以重新分析");
                if (progress) {
                  for (const item of progress) {
                    if (!item || !item.id) continue;
@@ -1688,16 +1747,14 @@
               this.sectionHasResult = { meta: false, core: false, scenes: false, thunder: false, lewd: false };
               this.activeRequests = 0;
               this.loading = false;
+              this.selectedFile = null;
               this.selectedNovel = null;
-              this.novelTitle = "选择一本小说";
+              this.novelTitle = "选择文件";
               this.analysisComplete = false;
               this.currentNovelContent = null;
               this.currentNovelLength = 0;
              this.currentTab = "pipeline";
              this.resetProgress();
-             document
-               .querySelectorAll(".file-item")
-               .forEach((el) => el.classList.remove("bg-primary/20"));
              this.clearRenderedResults();
              this.showToast("已清空分析结果", "info");
              this.settingsOpen = false;

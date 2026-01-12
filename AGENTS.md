@@ -77,7 +77,7 @@ python -m playwright install chromium
 - Keep functions small and focused
 - Validate external inputs (paths, URLs, LLM output)
 - Prefer type hints for public helpers and request/response models
-- Internal helpers use a leading `_` (e.g., `_safe_novel_path`, `_validate_api_url`)
+- Internal helpers use a leading `_` (e.g., `_validate_api_url`, `_raise_errors`)
 
 ### Frontend
 - Stay "vanilla" (Alpine.js + DOM APIs)
@@ -172,9 +172,8 @@ The server includes security middleware:
 - `X-Frame-Options: DENY`
 
 ### Path Security
-- `_safe_novel_path()` prevents directory traversal attacks
-- Only `.txt` files are allowed to be read
-- All file operations are restricted to `NOVEL_PATH` directory
+- Backend does not scan/read local novel files (no directory traversal surface)
+- Novel content is imported on the frontend via local file selection (single `.txt`)
 
 ### LLM Security
 - API keys are only stored on the server (`.env`)

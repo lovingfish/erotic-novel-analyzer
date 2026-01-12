@@ -16,7 +16,7 @@ LLM-powered novel analyzer for adult fiction. Extracts metadata, characters, rel
 ### Code Style
 - 4-space indentation (Python)
 - Type hints for public helpers and Pydantic models
-- Internal helpers prefixed with `_` (e.g., `_safe_novel_path`)
+- Internal helpers prefixed with `_` (e.g., `_validate_api_url`)
 - Pydantic models use `extra="forbid"` and `ConfigDict`
 - Chinese comments/UI text acceptable
 
@@ -45,7 +45,7 @@ LLM-powered novel analyzer for adult fiction. Extracts metadata, characters, rel
 ## Important Constraints
 - LLM output **must** use Function Calling; plain JSON/text responses are rejected
 - `config/llm.yaml` is read-only at runtime (no dynamic config changes)
-- File access restricted to `NOVEL_PATH` directory; only `.txt` files allowed
+- Novel content is imported on the frontend via local file selection (single `.txt`); backend does not scan/read local novel files
 - `HOST=127.0.0.1` by default (no LAN exposure)
 
 ## External Dependencies
